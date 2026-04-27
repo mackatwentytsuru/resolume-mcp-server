@@ -1,7 +1,8 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ResolumeApiError } from "../errors/types.js";
-import { allTools, type AnyTool } from "../tools/index.js";
+import { allTools } from "../tools/index.generated.js";
+import type { AnyTool } from "../tools/registry.js";
 import type { ToolContext, ToolResult } from "../tools/types.js";
 
 /**
