@@ -1,0 +1,86 @@
+import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { ResolumeApiError } from "../errors/types.js";
+import { allTools, type AnyTool } from "../tools/index.js";
+import type { ToolContext, ToolResult } from "../tools/types.js";
+
+/**
+ * Register every Resolume MCP tool against the SDK server. The handler
+ * wraps each call in a try/catch so that any ResolumeApiError is surfaced
+ * to the LLM as a structured error result instead of crashing the server.
+ */
+export function registerTools(server: McpServer, ctx: ToolContext): void {
+  for (const tool of allTools) {
+    registerOne(server, ctx, tool);
+  }
+}
+
+function registerOne(server: McpServer, ctx: ToolContext, tool: AnyTool): void {
+  // SDK signature: server.tool(name, description, paramsShape, handler).
+  // The shape is the raw Zod object map; the SDK wraps it with z.object() internally.
+  server.tool(
+    tool.name,
+    tool.description,
+    tool.inputSchema,
+    async (args: unknown) => safeHandle(tool, ctx, args)
+  );
+}
+
+async function safeHandle(
+  tool: AnyTool,
+  ctx: ToolContext,
+  rawArgs: unknown
+): Promise<ToolResult> {
+  try {
+    // The SDK already validated against the shape; we re-validate with strict
+    // mode to catch unknown keys and produce a clear, schema-stable error message.
+    const schema = z.object(tool.inputSchema).strict();
+    const parsed = schema.parse(rawArgs ?? {});
+    return await tool.handler(parsed, ctx);
+  } catch (err) {
+    return formatError(err);
+  }
+}
+
+interface ErrorEnvelope {
+  error: string;
+  message: string;
+  hint: string;
+  detail?: unknown;
+  issues?: { field: string; issue: string }[];
+}
+
+function formatError(err: unknown): ToolResult {
+  let envelope: ErrorEnvelope;
+
+  if (err instanceof ResolumeApiError) {
+    envelope = {
+      error: err.detail.kind,
+      message: err.message,
+      hint: "hint" in err.detail ? err.detail.hint : "",
+      detail: err.detail,
+    };
+  } else if (err instanceof z.ZodError) {
+    envelope = {
+      error: "InvalidArguments",
+      message: err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+      hint: "Re-call the tool with valid arguments. See `issues` for the offending fields.",
+      issues: err.issues.map((i) => ({
+        field: i.path.join(".") || "(root)",
+        issue: i.message,
+      })),
+    };
+  } else {
+    const message = err instanceof Error ? err.message : String(err);
+    envelope = {
+      error: "Unexpected",
+      message,
+      hint: "This is likely a bug in resolume-mcp-server. Please report it with the exact prompt and arguments.",
+    };
+  }
+
+  return {
+    isError: true,
+    content: [{ type: "text", text: JSON.stringify(envelope, null, 2) }],
+  };
+}

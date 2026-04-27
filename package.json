@@ -1,0 +1,68 @@
+{
+  "name": "resolume-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP Server for Resolume Arena - control your VJ software with AI assistants like Claude",
+  "type": "module",
+  "main": "./build/index.js",
+  "types": "./build/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./build/index.d.ts",
+      "import": "./build/index.js"
+    }
+  },
+  "bin": {
+    "resolume-mcp-server": "./build/index.js"
+  },
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', 0o755)\"",
+    "start": "node build/index.js",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run build && npm test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.2",
+    "msw": "^2.7.0",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.2"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "resolume",
+    "resolume-arena",
+    "resolume-avenue",
+    "vj",
+    "video",
+    "live-performance",
+    "claude",
+    "ai"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mackatwentytsuru/resolume-mcp-server.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mackatwentytsuru/resolume-mcp-server/issues"
+  },
+  "homepage": "https://github.com/mackatwentytsuru/resolume-mcp-server#readme",
+  "license": "MIT",
+  "author": "mackatwentytsuru"
+}

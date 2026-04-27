@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "resolume": {
+      "command": "node",
+      "args": ["./build/index.js"],
+      "env": {
+        "RESOLUME_HOST": "127.0.0.1",
+        "RESOLUME_PORT": "8080"
+      }
+    }
+  }
+}
