@@ -66,6 +66,21 @@ These combinations on a single layer cause runaway brightness (positive feedback
 - If using Add/Screen blend, avoid Trails + Bloom together
 - Add ONE effect at a time during demos and verify before adding the next
 
+### Rule 2.5: Effect add/remove churn → Resolume crash (real incident)
+
+**Discovered the hard way during a continuous VJ loop session**: rapid add/remove of effects (every 8 beats = ~3.6s at 131.4 BPM) crashed Resolume Arena 7.23.2 after ~24 seconds (6 swaps). Crash dialog appeared, REST returned 404 for the layer path, OSC connection died. Likely cause: GPU resource churn or internal effect-chain state corruption.
+
+**Rules**:
+- **MAX 1 effect swap per 32 beats** (~1 bar at common BPMs is fine; sub-bar swap rates are dangerous)
+- **Prefer parameter modulation** over effect swap for fast changes — params can update every beat safely (no GPU resource churn)
+- **For long sessions**: pick 1-3 effects, add them once, modulate parameters only. Swap effects rarely (every 16-32 bars)
+- **Watch for crash signals**: 404 on layer path = Resolume died. Stop the loop immediately; don't try to "recover" with more API calls.
+
+**Validated empirically (2026-04-27)**:
+- v1 loop: 8-beat (~3.6s) effect swap rate → Resolume crashed in **24 seconds / 6 swaps**.
+- v2 loop: 5-second tick + 20-second swap cooldown + max 3-effect stack → **64 minutes / 763 ticks, no crash**. Stopped only because user manually closed Resolume.
+- Conclusion: a swap interval of **at least ~20 seconds** with stack capped at 3 effects is safe for hour-scale continuous operation. See `examples/vj-loop-v2.mjs` for the reference implementation.
+
 ### Rule 3: Always restore state after tests
 
 Track everything you change and restore at the end. Pattern:
