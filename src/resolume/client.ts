@@ -15,18 +15,29 @@ import * as tempo from "./tempo.js";
 export { summarizeComposition } from "./composition.js";
 
 /**
- * High-level facade over the Resolume REST API. This is the surface tools
- * call into; it adds schema validation and helpful summaries on top of the
- * raw REST client.
+ * High-level facade over the Resolume REST API. Tools always go through this
+ * class — the connection lifecycle (`fromConfig`), schema validation, and the
+ * cross-domain `getCompositionSummary` projection live here. Domain logic
+ * (per-call validation, request shape, error mapping) lives in the per-domain
+ * modules under `src/resolume/`:
+ *
+ *   - composition.ts → reads, beat-snap, crossfader, column/deck triggers
+ *   - clip.ts        → trigger/select/clear, transport, thumbnails, wipe
+ *   - layer.ts       → opacity/bypass/blend mode, transition
+ *   - tempo.ts       → tempo controller (BPM, tap, resync)
+ *   - effects.ts     → effect catalog, parameter set, add/remove
+ *
+ * Each method below is a one-line delegate. New behavior should be added to
+ * the relevant domain module, NOT to this facade.
  *
  * IMPORTANT: Resolume's REST API does NOT expose parameter values at deep
  * paths like `/composition/layers/1/video/opacity`. Instead, all parameter
  * mutations are PUT requests to a *parent* path with the parameter nested
- * inside the body. The convention used here:
+ * inside the body. The convention used by the domain modules:
  *
- *   PUT /composition                      with `{tempocontroller: {tempo: {value: 130}}}`
- *   PUT /composition/layers/{n}           with `{video: {opacity: {value: 0.5}}}`
- *   POST /composition/.../<action>        for action triggers (connect, select, clear)
+ *   PUT /composition                with `{tempocontroller: {tempo: {value: 130}}}`
+ *   PUT /composition/layers/{n}     with `{video: {opacity: {value: 0.5}}}`
+ *   POST /composition/.../<action>  for action triggers (connect, select, clear)
  */
 export class ResolumeClient {
   constructor(private readonly rest: ResolumeRestClient) {}
@@ -39,19 +50,14 @@ export class ResolumeClient {
     return new ResolumeClient(rest);
   }
 
-  // ---- Composition / state (implementations in ./composition.ts) ----
+  // ---- Composition reads ----
 
-  /** Returns the full raw composition tree as Resolume serves it. */
   async getComposition(): Promise<Composition> {
     return composition.getComposition(this.rest);
   }
-
-  /** Resolume version + product info. Returns null on Resolume builds where /product 404s. */
   async getProductInfo(): Promise<ProductInfo | null> {
     return composition.getProductInfo(this.rest);
   }
-
-  /** Compact LLM-facing summary: version, BPM, layer/column/deck overview. */
   async getCompositionSummary(): Promise<CompositionSummary> {
     const [comp, product] = await Promise.all([
       this.getComposition(),
@@ -60,154 +66,41 @@ export class ResolumeClient {
     return composition.summarizeComposition(comp, product);
   }
 
-  // ---- Clip actions (implementations in ./clip.ts) ----
-
-  /** Connects (plays) a clip. Equivalent to clicking it in the Resolume UI. */
-  async triggerClip(l: number, c: number): Promise<void> {
-    return clip.triggerClip(this.rest, l, c);
-  }
-
-  /** Puts the clip under selection focus without connecting it. */
-  async selectClip(l: number, c: number): Promise<void> {
-    return clip.selectClip(this.rest, l, c);
-  }
-
-  /** Fires every clip in the column simultaneously across all layers. */
-  async triggerColumn(column: number): Promise<void> {
-    return composition.triggerColumn(this.rest, column);
-  }
-
-  /** Switches the active deck. Decks act as scene/song banks. */
-  async selectDeck(deck: number): Promise<void> {
-    return composition.selectDeck(this.rest, deck);
-  }
-
-  /** Disconnects all clips on the layer (layer goes black). */
-  async clearLayer(l: number): Promise<void> {
-    return layer.clearLayer(this.rest, l);
-  }
-
-  /**
-   * Empties a single clip slot — removes the loaded media so the slot is blank.
-   * This is more destructive than clearLayer (which only disconnects what's
-   * playing); after clearClip the slot has no source, no name, no thumbnail.
-   */
-  async clearClip(l: number, c: number): Promise<void> {
-    return clip.clearClip(this.rest, l, c);
-  }
-
-  /**
-   * Empties every clip slot on every layer of the active composition. Returns
-   * the number of slots actually cleared.
-   */
-  async wipeComposition(): Promise<{ layers: number; slotsCleared: number }> {
-    return clip.wipeComposition(this.rest);
-  }
-
-  // ---- Layer parameters (implementations in ./layer.ts) ----
-
-  /** Master opacity in 0..1. */
-  async setLayerOpacity(l: number, value: number): Promise<void> {
-    return layer.setLayerOpacity(this.rest, l, value);
-  }
-
-  /** Mute/unmute the layer (skips rendering when bypassed). */
-  async setLayerBypass(l: number, bypassed: boolean): Promise<void> {
-    return layer.setLayerBypass(this.rest, l, bypassed);
-  }
-
-  /** Layer blend mode (Add, Multiply, Screen, etc.). Pre-validates against live options. */
-  async setLayerBlendMode(l: number, blendMode: string): Promise<void> {
-    return layer.setLayerBlendMode(this.rest, l, blendMode);
-  }
-
-  /** Returns the list of available blend mode names for the layer. */
-  async getLayerBlendModes(l: number): Promise<string[]> {
-    return layer.getLayerBlendModes(this.rest, l);
-  }
-
-  // ---- Crossfader (implementations in ./composition.ts) ----
-
-  /** Returns the crossfader phase (-1 = full A, 0 = center, 1 = full B). */
-  async getCrossfader(): Promise<{ phase: number | null }> {
-    return composition.getCrossfader(this.rest);
-  }
-
-  /** Sets the crossfader phase. -1 = side A, 0 = center, 1 = side B. */
-  async setCrossfader(phase: number): Promise<void> {
-    return composition.setCrossfader(this.rest, phase);
-  }
-
-  // ---- Layer transition (implementations in ./layer.ts) ----
-
-  /** Sets the layer's transition duration in seconds (0..10). 0 = instant cuts. */
-  async setLayerTransitionDuration(l: number, durationSeconds: number): Promise<void> {
-    return layer.setLayerTransitionDuration(this.rest, l, durationSeconds);
-  }
-
-  /** Returns the available transition blend modes for a layer (50+ options). */
-  async getLayerTransitionBlendModes(l: number): Promise<string[]> {
-    return layer.getLayerTransitionBlendModes(this.rest, l);
-  }
-
-  /** Sets the layer's transition blend mode (the visual effect applied during clip changes). */
-  async setLayerTransitionBlendMode(l: number, blendMode: string): Promise<void> {
-    return layer.setLayerTransitionBlendMode(this.rest, l, blendMode);
-  }
-
-  // ---- Tempo controller (implementations in ./tempo.ts) ----
-
-  async getTempo(): Promise<TempoState> {
-    return tempo.getTempo(this.rest);
-  }
-
-  async setTempo(bpm: number): Promise<void> {
-    return tempo.setTempo(this.rest, bpm);
-  }
-
-  /** Send a single tap to the tap-tempo controller. Multiple taps in succession recalibrate Resolume's BPM. */
-  async tapTempo(): Promise<void> {
-    return tempo.tapTempo(this.rest);
-  }
-
-  async resyncTempo(): Promise<void> {
-    return tempo.resyncTempo(this.rest);
-  }
-
-  // ---- Effects (implementations in ./effects.ts) ----
-
-  /** Resolume full video effect catalog. Implemented in effects.ts. */
-  async listVideoEffects(): Promise<EffectCatalogEntry[]> {
-    return effects.listVideoEffects(this.rest);
-  }
-
-  async listLayerEffects(layer: number): Promise<Awaited<ReturnType<typeof effects.listLayerEffects>>> {
-    return effects.listLayerEffects(this.rest, layer);
-  }
-
-  async setEffectParameter(layer: number, effectIndex: number, paramName: string, value: number | string | boolean): Promise<void> {
-    return effects.setEffectParameter(this.rest, layer, effectIndex, paramName, value);
-  }
-
-  async addEffectToLayer(layer: number, effectName: string): Promise<void> {
-    return effects.addEffectToLayer(this.rest, layer, effectName);
-  }
-
-  async removeEffectFromLayer(layer: number, effectIndex: number): Promise<void> {
-    return effects.removeEffectFromLayer(this.rest, layer, effectIndex);
-  }
-  // ---- Composition-level beat snap (implementations in ./composition.ts) ----
+  // ---- Composition-level controls (beat snap, crossfader, column/deck) ----
 
   async getBeatSnap(): Promise<{ value: string | null; options: string[] }> {
     return composition.getBeatSnap(this.rest);
   }
-
   async setBeatSnap(value: string): Promise<void> {
     return composition.setBeatSnap(this.rest, value);
   }
+  async getCrossfader(): Promise<{ phase: number | null }> {
+    return composition.getCrossfader(this.rest);
+  }
+  async setCrossfader(phase: number): Promise<void> {
+    return composition.setCrossfader(this.rest, phase);
+  }
+  async triggerColumn(column: number): Promise<void> {
+    return composition.triggerColumn(this.rest, column);
+  }
+  async selectDeck(deck: number): Promise<void> {
+    return composition.selectDeck(this.rest, deck);
+  }
 
-  // ---- Clip transport (implementations in ./clip.ts) ----
+  // ---- Clip ----
 
+  async triggerClip(l: number, c: number): Promise<void> {
+    return clip.triggerClip(this.rest, l, c);
+  }
+  async selectClip(l: number, c: number): Promise<void> {
+    return clip.selectClip(this.rest, l, c);
+  }
+  async clearClip(l: number, c: number): Promise<void> {
+    return clip.clearClip(this.rest, l, c);
+  }
+  async wipeComposition(): Promise<{ layers: number; slotsCleared: number }> {
+    return clip.wipeComposition(this.rest);
+  }
   async setClipPlayDirection(
     l: number,
     c: number,
@@ -215,24 +108,12 @@ export class ResolumeClient {
   ): Promise<void> {
     return clip.setClipPlayDirection(this.rest, l, c, direction);
   }
-
   async setClipPlayMode(l: number, c: number, mode: string): Promise<void> {
     return clip.setClipPlayMode(this.rest, l, c, mode);
   }
-
   async setClipPosition(l: number, c: number, position: number): Promise<void> {
     return clip.setClipPosition(this.rest, l, c, position);
   }
-
-  // ---- Thumbnails (implementations in ./clip.ts) ----
-
-  /**
-   * Returns the clip's thumbnail as base64-encoded image bytes.
-   *
-   * @param cacheBuster Internal: function returning a unique number per call
-   *                    to defeat HTTP caches. Default: `Date.now`. Override
-   *                    only in tests where you need a deterministic URL.
-   */
   async getClipThumbnail(
     l: number,
     c: number,
@@ -240,5 +121,69 @@ export class ResolumeClient {
   ): Promise<{ base64: string; mediaType: string }> {
     return clip.getClipThumbnail(this.rest, l, c, cacheBuster);
   }
-}
 
+  // ---- Layer ----
+
+  async clearLayer(l: number): Promise<void> {
+    return layer.clearLayer(this.rest, l);
+  }
+  async setLayerOpacity(l: number, value: number): Promise<void> {
+    return layer.setLayerOpacity(this.rest, l, value);
+  }
+  async setLayerBypass(l: number, bypassed: boolean): Promise<void> {
+    return layer.setLayerBypass(this.rest, l, bypassed);
+  }
+  async setLayerBlendMode(l: number, blendMode: string): Promise<void> {
+    return layer.setLayerBlendMode(this.rest, l, blendMode);
+  }
+  async getLayerBlendModes(l: number): Promise<string[]> {
+    return layer.getLayerBlendModes(this.rest, l);
+  }
+  async setLayerTransitionDuration(l: number, durationSeconds: number): Promise<void> {
+    return layer.setLayerTransitionDuration(this.rest, l, durationSeconds);
+  }
+  async getLayerTransitionBlendModes(l: number): Promise<string[]> {
+    return layer.getLayerTransitionBlendModes(this.rest, l);
+  }
+  async setLayerTransitionBlendMode(l: number, blendMode: string): Promise<void> {
+    return layer.setLayerTransitionBlendMode(this.rest, l, blendMode);
+  }
+
+  // ---- Tempo ----
+
+  async getTempo(): Promise<TempoState> {
+    return tempo.getTempo(this.rest);
+  }
+  async setTempo(bpm: number): Promise<void> {
+    return tempo.setTempo(this.rest, bpm);
+  }
+  async tapTempo(): Promise<void> {
+    return tempo.tapTempo(this.rest);
+  }
+  async resyncTempo(): Promise<void> {
+    return tempo.resyncTempo(this.rest);
+  }
+
+  // ---- Effects ----
+
+  async listVideoEffects(): Promise<EffectCatalogEntry[]> {
+    return effects.listVideoEffects(this.rest);
+  }
+  async listLayerEffects(l: number): Promise<Awaited<ReturnType<typeof effects.listLayerEffects>>> {
+    return effects.listLayerEffects(this.rest, l);
+  }
+  async setEffectParameter(
+    l: number,
+    effectIndex: number,
+    paramName: string,
+    value: number | string | boolean
+  ): Promise<void> {
+    return effects.setEffectParameter(this.rest, l, effectIndex, paramName, value);
+  }
+  async addEffectToLayer(l: number, effectName: string): Promise<void> {
+    return effects.addEffectToLayer(this.rest, l, effectName);
+  }
+  async removeEffectFromLayer(l: number, effectIndex: number): Promise<void> {
+    return effects.removeEffectFromLayer(this.rest, l, effectIndex);
+  }
+}
