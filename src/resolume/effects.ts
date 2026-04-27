@@ -7,6 +7,7 @@ import { ResolumeRestClient } from "./rest.js";
 import type { EffectCatalogEntry } from "./types.js";
 import { ResolumeApiError } from "../errors/types.js";
 import { assertIndex } from "./shared.js";
+import type { EffectIdCache } from "./effect-id-cache.js";
 
 // Module-level parameter type Sets (avoid per-call allocation in coerceParamValue).
 export const NUMERIC_TYPES = new Set(["ParamRange", "ParamNumber", "ParamFloat", "ParamInt"]);
@@ -141,39 +142,20 @@ export async function listLayerEffects(
 }
 
 /**
- * Set a parameter on an existing effect attached to a layer.
- * `effectIndex` is 1-based across `layer.video.effects`.
- * `paramName` is the human-readable parameter name (e.g. "Scale", "Position X").
+ * Internal: GETs the layer, locates the effect at `effectIndex`, validates
+ * `paramName` against its parameter list, and returns the resolved id +
+ * valuetype. This is the slow path (one full layer GET); cache callers
+ * should ONLY use this on cache miss.
  *
- * Resolume's nested-PUT requires the target effect's `id` to identify which
- * entry in the array to mutate; without it, Resolume silently no-ops.
- * We fetch the layer, locate the effect by 1-based index, and include the id.
+ * Throws `ResolumeApiError` if effectIndex is out of range, the effect
+ * has no id, or paramName doesn't exist on the effect.
  */
-export async function setEffectParameter(
+async function fetchEffectInfo(
   rest: ResolumeRestClient,
   layer: number,
   effectIndex: number,
-  paramName: string,
-  value: number | string | boolean
-): Promise<void> {
-  assertIndex("layer", layer);
-  if (!Number.isInteger(effectIndex) || effectIndex < 1) {
-    throw new ResolumeApiError({
-      kind: "InvalidIndex",
-      what: "effect",
-      index: effectIndex,
-      hint: "effectIndex is the 1-based position of the effect on the layer. List the layer's effects to enumerate.",
-    });
-  }
-  if (typeof paramName !== "string" || paramName.length === 0) {
-    throw new ResolumeApiError({
-      kind: "InvalidValue",
-      field: "paramName",
-      value: paramName,
-      hint: "paramName must match the effect's parameter name exactly (e.g. 'Scale').",
-    });
-  }
-
+  paramName: string
+): Promise<{ id: number; valuetype: string | undefined }> {
   const rawLayer = (await rest.get(`/composition/layers/${layer}`)) as {
     video?: {
       effects?: Array<{
@@ -213,17 +195,84 @@ export async function setEffectParameter(
       hint: `Effect has no parameter named "${paramName}". Available: ${known.join(", ") || "(none)"}.`,
     });
   }
+  return { id: target.id, valuetype: target.params[paramName]?.valuetype };
+}
+
+/**
+ * Set a parameter on an existing effect attached to a layer.
+ * `effectIndex` is 1-based across `layer.video.effects`.
+ * `paramName` is the human-readable parameter name (e.g. "Scale", "Position X").
+ *
+ * Resolume's nested-PUT requires the target effect's `id` to identify which
+ * entry in the array to mutate; without it, Resolume silently no-ops.
+ * We fetch the layer, locate the effect by 1-based index, and include the id.
+ *
+ * `cache` (optional): when supplied, halves request rate for tight-loop
+ * parameter sweeps. Cache stores only the id; on hit we skip the GET and
+ * pass `value` through `coerceParamValue` without a fresh `valuetype` —
+ * subsequent hits assume the parameter still exists with the same type.
+ * If the cache is missing or disabled, behavior is identical to v0.4.x.
+ */
+export async function setEffectParameter(
+  rest: ResolumeRestClient,
+  layer: number,
+  effectIndex: number,
+  paramName: string,
+  value: number | string | boolean,
+  cache?: EffectIdCache
+): Promise<void> {
+  assertIndex("layer", layer);
+  if (!Number.isInteger(effectIndex) || effectIndex < 1) {
+    throw new ResolumeApiError({
+      kind: "InvalidIndex",
+      what: "effect",
+      index: effectIndex,
+      hint: "effectIndex is the 1-based position of the effect on the layer. List the layer's effects to enumerate.",
+    });
+  }
+  if (typeof paramName !== "string" || paramName.length === 0) {
+    throw new ResolumeApiError({
+      kind: "InvalidValue",
+      field: "paramName",
+      value: paramName,
+      hint: "paramName must match the effect's parameter name exactly (e.g. 'Scale').",
+    });
+  }
+
+  // The cache stores only the id. On miss we still fetch the full layer and
+  // validate the param; on hit we skip the GET and best-effort coerce.
+  // `valuetype` is captured during the miss path inside the fetcher closure
+  // so the post-`lookup` PUT body uses the freshly-validated type.
+  let valuetype: string | undefined;
+  let validatedOnMiss = false;
+  const id = await (cache
+    ? cache.lookup(layer, effectIndex, async () => {
+        const info = await fetchEffectInfo(rest, layer, effectIndex, paramName);
+        valuetype = info.valuetype;
+        validatedOnMiss = true;
+        return info.id;
+      })
+    : (async () => {
+        const info = await fetchEffectInfo(rest, layer, effectIndex, paramName);
+        valuetype = info.valuetype;
+        validatedOnMiss = true;
+        return info.id;
+      })());
+
+  // On cache hit, `validatedOnMiss` stayed false: we don't have a fresh
+  // valuetype, so coerceParamValue passes the value through untyped. This
+  // is the documented caveat (param-schema staleness on hits — see spec).
+  void validatedOnMiss;
 
   // Resolume silently rejects type-mismatched values (e.g. string "175" for a
   // ParamRange) — the API returns 204 but ignores the change. Coerce based on
   // the parameter's declared valuetype so the LLM doesn't have to care about
   // exact JSON types when passing values through MCP wire encoding.
-  const valuetype = target.params[paramName]?.valuetype;
   const coerced = coerceParamValue(value, valuetype, paramName);
 
   const body: Array<Record<string, unknown>> = [];
   for (let i = 0; i < effectIndex - 1; i += 1) body.push({});
-  body.push({ id: target.id, params: { [paramName]: { value: coerced } } });
+  body.push({ id, params: { [paramName]: { value: coerced } } });
   await rest.put(`/composition/layers/${layer}`, {
     video: { effects: body },
   });
@@ -239,7 +288,12 @@ export async function setEffectParameter(
  * reported by the `/effects/video` catalog. Spaces are URL-safe in the URI
  * Resolume parses, so we leave them as-is.
  */
-export async function addEffectToLayer(rest: ResolumeRestClient, layer: number, effectName: string): Promise<void> {
+export async function addEffectToLayer(
+  rest: ResolumeRestClient,
+  layer: number,
+  effectName: string,
+  cache?: EffectIdCache
+): Promise<void> {
   assertIndex("layer", layer);
   if (typeof effectName !== "string" || effectName.trim().length === 0) {
     throw new ResolumeApiError({
@@ -257,6 +311,10 @@ export async function addEffectToLayer(rest: ResolumeRestClient, layer: number, 
     `/composition/layers/${layer}/effects/video/add`,
     `effect:///video/${encodeURIComponent(trimmed)}`
   );
+  // After add, every (layer, effectIndex) → id mapping on this layer is
+  // potentially stale — Resolume can insert at any position. Drop the
+  // layer's cache so the next setEffectParameter refetches.
+  cache?.invalidateLayer(layer);
 }
 
 /**
@@ -268,7 +326,12 @@ export async function addEffectToLayer(rest: ResolumeRestClient, layer: number, 
  * generally a bad idea — Resolume usually pre-installs it. We surface the
  * user's choice to them rather than blocking it.
  */
-export async function removeEffectFromLayer(rest: ResolumeRestClient, layer: number, effectIndex: number): Promise<void> {
+export async function removeEffectFromLayer(
+  rest: ResolumeRestClient,
+  layer: number,
+  effectIndex: number,
+  cache?: EffectIdCache
+): Promise<void> {
   assertIndex("layer", layer);
   if (!Number.isInteger(effectIndex) || effectIndex < 1) {
     throw new ResolumeApiError({
@@ -292,5 +355,9 @@ export async function removeEffectFromLayer(rest: ResolumeRestClient, layer: num
   await rest.delete(
     `/composition/layers/${layer}/effects/video/${zeroBased}`
   );
+  // After remove, indices > the removed slot shift down — drop the entire
+  // layer's cache so the next setEffectParameter refetches against the
+  // correct array shape.
+  cache?.invalidateLayer(layer);
 }
 

@@ -18,7 +18,21 @@ import { assertIndex, filterStringOptions } from "./shared.js";
 
 // ---- Clear (disconnect all clips on the layer) ----
 
-/** Disconnects all clips on the layer (layer goes black). */
+/**
+ * Disconnects all clips on the layer (layer goes black).
+ *
+ * IMPORTANT — DO NOT invalidate the effect-id cache here. Resolume's
+ * `/composition/layers/{n}/clear` is **clip-only**: it disconnects
+ * whatever clip is playing on the layer but leaves the layer's video
+ * effect chain (`layer.video.effects`) untouched. Effect ids on the
+ * layer therefore remain stable across `clearLayer`. The corresponding
+ * cache invalidations live on `addEffectToLayer` /
+ * `removeEffectFromLayer`. Adding a `cache.invalidateLayer(layer)` call
+ * here would force unnecessary refetches in BPM-synced parameter loops.
+ *
+ * (Confirmed by docs/v0.5/04-effect-cache-and-sub-endpoints.md and
+ *  CLAUDE.md.)
+ */
 export async function clearLayer(rest: ResolumeRestClient, layer: number): Promise<void> {
   assertIndex("layer", layer);
   await rest.post(`/composition/layers/${layer}/clear`);

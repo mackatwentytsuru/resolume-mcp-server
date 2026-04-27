@@ -154,21 +154,34 @@ describe("ResolumeClient.setEffectParameter", () => {
   });
 
   it("coerces numeric 0/1 to booleans for ParamBoolean", async () => {
-    const { client, rest } = buildClient({
-      get: () => ({
-        video: {
-          effects: [{ id: 1, params: { Active: { valuetype: "ParamBoolean" } } }],
-        },
-      }),
-    });
-    await client.setEffectParameter(1, 1, "Active", 1 as unknown as boolean);
-    expect(rest.put).toHaveBeenLastCalledWith("/composition/layers/1", {
-      video: { effects: [{ id: 1, params: { Active: { value: true } } }] },
-    });
-    await client.setEffectParameter(1, 1, "Active", 0 as unknown as boolean);
-    expect(rest.put).toHaveBeenLastCalledWith("/composition/layers/1", {
-      video: { effects: [{ id: 1, params: { Active: { value: false } } }] },
-    });
+    // Fresh client for each call so the effect-id cache doesn't replay
+    // the first GET's valuetype on the second call (cache stores id only).
+    {
+      const { client, rest } = buildClient({
+        get: () => ({
+          video: {
+            effects: [{ id: 1, params: { Active: { valuetype: "ParamBoolean" } } }],
+          },
+        }),
+      });
+      await client.setEffectParameter(1, 1, "Active", 1 as unknown as boolean);
+      expect(rest.put).toHaveBeenLastCalledWith("/composition/layers/1", {
+        video: { effects: [{ id: 1, params: { Active: { value: true } } }] },
+      });
+    }
+    {
+      const { client, rest } = buildClient({
+        get: () => ({
+          video: {
+            effects: [{ id: 1, params: { Active: { valuetype: "ParamBoolean" } } }],
+          },
+        }),
+      });
+      await client.setEffectParameter(1, 1, "Active", 0 as unknown as boolean);
+      expect(rest.put).toHaveBeenLastCalledWith("/composition/layers/1", {
+        video: { effects: [{ id: 1, params: { Active: { value: false } } }] },
+      });
+    }
   });
 
   it("rejects non-true/false strings for ParamBoolean with a clear hint", async () => {
@@ -266,6 +279,180 @@ describe("ResolumeClient.setEffectParameter", () => {
     ).rejects.toMatchObject({
       detail: { kind: "InvalidValue", field: "paramName" },
     });
+  });
+});
+
+describe("ResolumeClient.setEffectParameter — effect-id cache", () => {
+  it("second call on same (layer, effectIndex) skips the GET (cache hit)", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 100, params: { Scale: { valuetype: "ParamRange" } } }],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 1, "Scale", 50);
+    await client.setEffectParameter(1, 1, "Scale", 60);
+    // Cache hit on second call — only one GET total; both PUTs went out.
+    expect(rest.get).toHaveBeenCalledTimes(1);
+    expect(rest.put).toHaveBeenCalledTimes(2);
+  });
+
+  it("addEffectToLayer invalidates the cache (next set re-fetches)", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 100, params: { Scale: { valuetype: "ParamRange" } } }],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 1, "Scale", 50);
+    expect(rest.get).toHaveBeenCalledTimes(1);
+
+    await client.addEffectToLayer(1, "Blur");
+    // Adding can shift indices — the cached id for (1, 1) is now suspect.
+    await client.setEffectParameter(1, 1, "Scale", 60);
+    expect(rest.get).toHaveBeenCalledTimes(2);
+  });
+
+  it("removeEffectFromLayer invalidates the cache for that layer", async () => {
+    // listLayerEffects also calls GET, so we count how many total GETs the
+    // wrapper does and reason about deltas.
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 100, params: { Scale: { valuetype: "ParamRange" } } }],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 1, "Scale", 50);
+    expect(rest.get).toHaveBeenCalledTimes(1);
+
+    // removeEffectFromLayer issues its own GET via listLayerEffects, then DELETEs.
+    await client.removeEffectFromLayer(1, 1);
+    const getsAfterRemove = (rest.get as { mock: { calls: unknown[][] } }).mock.calls.length;
+
+    // Next setEffectParameter on (1,1) should NOT use the cached id; it must
+    // do a fresh GET.
+    await client.setEffectParameter(1, 1, "Scale", 60);
+    expect(rest.get).toHaveBeenCalledTimes(getsAfterRemove + 1);
+  });
+
+  it("different effectIndex on the same layer is cached independently", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [
+            { id: 100, params: { Scale: { valuetype: "ParamRange" } } },
+            { id: 200, params: { Scale: { valuetype: "ParamRange" } } },
+          ],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 1, "Scale", 1); // miss
+    await client.setEffectParameter(1, 2, "Scale", 2); // miss
+    await client.setEffectParameter(1, 1, "Scale", 3); // hit
+    await client.setEffectParameter(1, 2, "Scale", 4); // hit
+    expect(rest.get).toHaveBeenCalledTimes(2);
+    expect(rest.put).toHaveBeenCalledTimes(4);
+  });
+
+  it("cache is per-client — two clients do not share entries", async () => {
+    const { client: c1, rest: r1 } = buildClient({
+      get: () => ({
+        video: { effects: [{ id: 1, params: { Scale: { valuetype: "ParamRange" } } }] },
+      }),
+    });
+    const { client: c2, rest: r2 } = buildClient({
+      get: () => ({
+        video: { effects: [{ id: 1, params: { Scale: { valuetype: "ParamRange" } } }] },
+      }),
+    });
+    await c1.setEffectParameter(1, 1, "Scale", 50);
+    await c2.setEffectParameter(1, 1, "Scale", 50);
+    expect(r1.get).toHaveBeenCalledTimes(1);
+    expect(r2.get).toHaveBeenCalledTimes(1);
+  });
+
+  it("clearLayer does NOT invalidate the cache (clip-only operation)", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 100, params: { Scale: { valuetype: "ParamRange" } } }],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 1, "Scale", 50);
+    await client.clearLayer(1);
+    await client.setEffectParameter(1, 1, "Scale", 60);
+    // Effect chain unchanged by clearLayer — cache still valid; only one GET.
+    expect(rest.get).toHaveBeenCalledTimes(1);
+  });
+
+  it("wipeComposition clears the entire effect-id cache", async () => {
+    const { client, rest } = buildClient({
+      get: (path) => {
+        if (path === "/composition") {
+          return { layers: [{ clips: [{}, {}] }, { clips: [{}] }] };
+        }
+        // Layer path
+        return {
+          video: {
+            effects: [{ id: 100, params: { Scale: { valuetype: "ParamRange" } } }],
+          },
+        };
+      },
+    });
+    await client.setEffectParameter(1, 1, "Scale", 50);
+    await client.wipeComposition();
+    await client.setEffectParameter(1, 1, "Scale", 60);
+    // First set: 1 GET (layer). Wipe: 1 GET (composition). Second set: 1 GET (layer, cache cleared).
+    const getCalls = (rest.get as { mock: { calls: string[][] } }).mock.calls.map((c) => c[0]);
+    const layerGets = getCalls.filter((p) => p === "/composition/layers/1").length;
+    expect(layerGets).toBe(2);
+  });
+
+  it("selectDeck clears the entire effect-id cache", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 100, params: { Scale: { valuetype: "ParamRange" } } }],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 1, "Scale", 50);
+    expect(rest.get).toHaveBeenCalledTimes(1);
+
+    await client.selectDeck(2); // POST, no GET
+    await client.setEffectParameter(1, 1, "Scale", 60);
+    // Deck switch dropped the cache — full re-fetch on next set.
+    expect(rest.get).toHaveBeenCalledTimes(2);
+  });
+
+  it("with cache disabled, every set does GET-then-PUT", async () => {
+    const restMock = {
+      get: vi.fn(async () => ({
+        video: {
+          effects: [{ id: 100, params: { Scale: { valuetype: "ParamRange" } } }],
+        },
+      })),
+      put: vi.fn(async () => undefined),
+      post: vi.fn(),
+      postText: vi.fn(),
+      delete: vi.fn(),
+      getBinary: vi.fn(),
+    } as unknown as ResolumeRestClient;
+    const { ResolumeClient: Client } = await import("./client.js");
+    const client = new Client(restMock, { enabled: false });
+    await client.setEffectParameter(1, 1, "Scale", 50);
+    await client.setEffectParameter(1, 1, "Scale", 60);
+    await client.setEffectParameter(1, 1, "Scale", 70);
+    expect(
+      (restMock.get as { mock: { calls: unknown[][] } }).mock.calls.length
+    ).toBe(3);
+    expect(
+      (restMock.put as { mock: { calls: unknown[][] } }).mock.calls.length
+    ).toBe(3);
   });
 });
 

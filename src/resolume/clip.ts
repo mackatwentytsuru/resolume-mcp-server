@@ -18,6 +18,7 @@ import { ResolumeRestClient } from "./rest.js";
 import { ResolumeApiError } from "../errors/types.js";
 import { assertIndex, filterStringOptions } from "./shared.js";
 import { getComposition } from "./composition.js";
+import type { EffectIdCache } from "./effect-id-cache.js";
 
 // ---- Trigger / select ----
 
@@ -72,7 +73,8 @@ export async function clearClip(
  * extracted in the per-domain split.
  */
 export async function wipeComposition(
-  rest: ResolumeRestClient
+  rest: ResolumeRestClient,
+  cache?: EffectIdCache
 ): Promise<{ layers: number; slotsCleared: number }> {
   const composition = await getComposition(rest);
   const layers = composition.layers ?? [];
@@ -86,6 +88,11 @@ export async function wipeComposition(
       cleared += 1;
     }
   }
+  // Conservative wipe — composition shape may be different after; drop
+  // the entire effect-id cache. (clearClip is clip-only and would not
+  // invalidate effect ids on its own; we treat the bulk wipe as a hard
+  // reset signal regardless.)
+  cache?.clearAll();
   return { layers: layers.length, slotsCleared: cleared };
 }
 
