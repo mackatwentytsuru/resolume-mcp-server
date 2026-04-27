@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ResolumeClient } from "../resolume/client.js";
+import type { CompositionStore } from "../resolume/composition-store/store.js";
 import type { OscConfig } from "../config.js";
 
 /**
@@ -20,6 +21,14 @@ export interface ToolContext {
   client: ResolumeClient;
   /** OSC host/ports (added in v0.4 for OSC tools). */
   osc?: OscConfig;
+  /**
+   * In-memory composition cache (v0.5). Present only when `RESOLUME_CACHE`
+   * is enabled. Tools that want the fast-path read can opt in via
+   * `ctx.store?.readSnapshot()` etc.; absent the flag this is undefined and
+   * tools fall through to REST exactly as in v0.4. The wired-in cache-fast
+   * tool integrations land in v0.5.1 (Sprint C / Phase 5).
+   */
+  store?: CompositionStore;
 }
 
 /**

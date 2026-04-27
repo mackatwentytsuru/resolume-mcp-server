@@ -27,6 +27,24 @@ const HostSchema = z
       "host must be a loopback or private-network address. Public hosts are refused to prevent SSRF.",
   });
 
+/**
+ * `RESOLUME_CACHE` toggle — gates the v0.5 CompositionStore.
+ *
+ * Default empty/`0` keeps the v0.4 behavior bit-for-bit identical: no socket
+ * is bound, no cache is constructed. `1`/`owner` enables the OSC-OUT-bound
+ * cache; `passive`/`shared` enables the cache without binding the socket
+ * (other tools must feed it via `store.feed`).
+ */
+const CacheModeSchema = z
+  .enum(["", "0", "1", "owner", "passive", "shared"])
+  .default("")
+  .transform((v) => {
+    if (v === "" || v === "0") return "off" as const;
+    if (v === "1" || v === "owner") return "owner" as const;
+    if (v === "passive" || v === "shared") return "shared" as const;
+    return "off" as const;
+  });
+
 const ConfigEnvSchema = z.object({
   RESOLUME_HOST: HostSchema.default("127.0.0.1"),
   RESOLUME_PORT: z.coerce.number().int().min(1024).max(65535).default(8080),
@@ -42,6 +60,7 @@ const ConfigEnvSchema = z.object({
     .enum(["0", "1", "true", "false"])
     .default("1")
     .transform((v) => v === "1" || v === "true"),
+  RESOLUME_CACHE: CacheModeSchema,
 });
 
 export interface OscConfig {
@@ -50,12 +69,18 @@ export interface OscConfig {
   outPort: number;
 }
 
+export interface CacheConfig {
+  /** `off` (default), `owner` (binds OSC OUT), or `shared` (passive — fed by other tools). */
+  mode: "off" | "owner" | "shared";
+}
+
 export interface ResolumeConfig {
   host: string;
   port: number;
   timeoutMs: number;
   osc: OscConfig;
   effectCacheEnabled: boolean;
+  cache: CacheConfig;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ResolumeConfig {
@@ -67,6 +92,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ResolumeConfig
     RESOLUME_OSC_IN_PORT: env.RESOLUME_OSC_IN_PORT,
     RESOLUME_OSC_OUT_PORT: env.RESOLUME_OSC_OUT_PORT,
     RESOLUME_EFFECT_CACHE: env.RESOLUME_EFFECT_CACHE,
+    RESOLUME_CACHE: env.RESOLUME_CACHE,
   });
   return {
     host: parsed.RESOLUME_HOST,
@@ -78,5 +104,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ResolumeConfig
       outPort: parsed.RESOLUME_OSC_OUT_PORT,
     },
     effectCacheEnabled: parsed.RESOLUME_EFFECT_CACHE,
+    cache: { mode: parsed.RESOLUME_CACHE },
   };
 }

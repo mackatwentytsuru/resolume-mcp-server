@@ -9,6 +9,7 @@ describe("loadConfig", () => {
       timeoutMs: 10_000,
       osc: { host: "127.0.0.1", inPort: 7000, outPort: 7001 },
       effectCacheEnabled: true,
+      cache: { mode: "off" },
     });
   });
 
@@ -25,6 +26,7 @@ describe("loadConfig", () => {
       timeoutMs: 5000,
       osc: { host: "127.0.0.1", inPort: 7000, outPort: 7001 },
       effectCacheEnabled: true,
+      cache: { mode: "off" },
     });
   });
 
@@ -120,6 +122,41 @@ describe("loadConfig", () => {
     it("rejects unrecognized values with a helpful error", () => {
       expect(() => loadConfig({ RESOLUME_EFFECT_CACHE: "yes" })).toThrow();
       expect(() => loadConfig({ RESOLUME_EFFECT_CACHE: "" })).toThrow();
+    });
+  });
+
+  describe("RESOLUME_CACHE", () => {
+    it("defaults to mode 'off' when unset", () => {
+      expect(loadConfig({}).cache).toEqual({ mode: "off" });
+    });
+
+    it("treats empty string as 'off'", () => {
+      expect(loadConfig({ RESOLUME_CACHE: "" }).cache.mode).toBe("off");
+    });
+
+    it("treats '0' as 'off'", () => {
+      expect(loadConfig({ RESOLUME_CACHE: "0" }).cache.mode).toBe("off");
+    });
+
+    it("treats '1' as 'owner'", () => {
+      expect(loadConfig({ RESOLUME_CACHE: "1" }).cache.mode).toBe("owner");
+    });
+
+    it("treats 'owner' as 'owner'", () => {
+      expect(loadConfig({ RESOLUME_CACHE: "owner" }).cache.mode).toBe("owner");
+    });
+
+    it("treats 'passive' as 'shared'", () => {
+      expect(loadConfig({ RESOLUME_CACHE: "passive" }).cache.mode).toBe("shared");
+    });
+
+    it("treats 'shared' as 'shared'", () => {
+      expect(loadConfig({ RESOLUME_CACHE: "shared" }).cache.mode).toBe("shared");
+    });
+
+    it("rejects unknown values", () => {
+      expect(() => loadConfig({ RESOLUME_CACHE: "true" })).toThrow();
+      expect(() => loadConfig({ RESOLUME_CACHE: "yes" })).toThrow();
     });
   });
 });
