@@ -360,6 +360,95 @@ export class ResolumeClient {
     });
   }
 
+  // ---- Composition-level beat snap / trigger style ----
+
+  async getBeatSnap(): Promise<{ value: string | null; options: string[] }> {
+    const composition = await this.getComposition();
+    const cbs = composition.clipbeatsnap as { value?: unknown; options?: unknown[] } | undefined;
+    const value = typeof cbs?.value === "string" ? cbs.value : null;
+    const options = Array.isArray(cbs?.options)
+      ? cbs.options.filter((o): o is string => typeof o === "string")
+      : [];
+    return { value, options };
+  }
+
+  async setBeatSnap(value: string): Promise<void> {
+    if (typeof value !== "string" || value.length === 0) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "beatSnap",
+        value,
+        hint: "beatSnap must be a non-empty string. Call resolume_get_beat_snap to enumerate options.",
+      });
+    }
+    const { options } = await this.getBeatSnap();
+    if (options.length > 0 && !options.includes(value)) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "beatSnap",
+        value,
+        hint: `Unknown beat snap "${value}". Available: ${options.join(", ")}.`,
+      });
+    }
+    await this.rest.put("/composition", {
+      clipbeatsnap: { value },
+    });
+  }
+
+  // ---- Clip transport ----
+
+  async setClipPlayDirection(
+    layer: number,
+    clip: number,
+    direction: "<" | "||" | ">"
+  ): Promise<void> {
+    assertIndex("layer", layer);
+    assertIndex("clip", clip);
+    if (direction !== "<" && direction !== "||" && direction !== ">") {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "direction",
+        value: direction,
+        hint: 'direction must be "<" (reverse), "||" (pause), or ">" (forward).',
+      });
+    }
+    await this.rest.put(`/composition/layers/${layer}/clips/${clip}`, {
+      transport: { controls: { playdirection: { value: direction } } },
+    });
+  }
+
+  async setClipPlayMode(layer: number, clip: number, mode: string): Promise<void> {
+    assertIndex("layer", layer);
+    assertIndex("clip", clip);
+    if (typeof mode !== "string" || mode.length === 0) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "mode",
+        value: mode,
+        hint: 'mode is one of "Loop", "Bounce", "Random", "Play Once & Clear", "Play Once & Hold".',
+      });
+    }
+    await this.rest.put(`/composition/layers/${layer}/clips/${clip}`, {
+      transport: { controls: { playmode: { value: mode } } },
+    });
+  }
+
+  async setClipPosition(layer: number, clip: number, position: number): Promise<void> {
+    assertIndex("layer", layer);
+    assertIndex("clip", clip);
+    if (!Number.isFinite(position) || position < 0) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "position",
+        value: position,
+        hint: "position is a non-negative number in clip-internal time units.",
+      });
+    }
+    await this.rest.put(`/composition/layers/${layer}/clips/${clip}`, {
+      transport: { position: { value: position } },
+    });
+  }
+
   // ---- Thumbnails ----
 
   async getClipThumbnail(

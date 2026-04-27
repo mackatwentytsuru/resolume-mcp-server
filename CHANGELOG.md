@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.3] - 2026-04-27
+
+Beat-snap and clip transport — the missing pieces for BPM-synced VJing. 23 tools total.
+
+### Added
+
+- **`resolume_get_beat_snap`** / **`resolume_set_beat_snap`** — composition-level clip beat-snap (None / 8 Bars / 4 Bars / 2 Bars / 1 Bar / 1/2 Bar / 1/4 Bar). When set, triggered clips wait for the next beat boundary before connecting. This is *the* mechanism Resolume uses to keep clip changes locked to music — essential for BPM-synced AI VJing.
+- **`resolume_set_clip_play_direction`** — `>` forward, `<` reverse, `||` pause. Closest equivalent to play/pause for a connected clip.
+- **`resolume_set_clip_play_mode`** — Loop / Bounce / Random / Play Once & Clear / Play Once & Hold.
+- **`resolume_set_clip_position`** — seek the connected clip to a specific position (re-trigger from the start, jump to cue points).
+
+All 5 new tools verified end-to-end against Resolume Arena 7.23.2.
+
+### Tests
+
+- 122 tests, ~96% coverage
+
 ## [0.2.2] - 2026-04-27
 
 Iterative bug-fix and quality release. Caught a hidden silent-rejection issue and substantially upgraded `list_layer_effects` for richer LLM context.

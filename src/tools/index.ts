@@ -1,6 +1,12 @@
 import type { z } from "zod";
 import type { ToolContext, ToolDefinition, ToolResult } from "./types.js";
 import { getCompositionTool } from "./composition/get-composition.js";
+import { getBeatSnapTool, setBeatSnapTool } from "./composition/beat-snap.js";
+import {
+  setClipPlayDirectionTool,
+  setClipPlayModeTool,
+  setClipPositionTool,
+} from "./clip/transport.js";
 import { triggerClipTool } from "./clip/trigger-clip.js";
 import { selectClipTool } from "./clip/select-clip.js";
 import { getClipThumbnailTool } from "./clip/get-thumbnail.js";
@@ -59,10 +65,15 @@ function eraseTool<TShape extends z.ZodRawShape>(tool: ToolDefinition<TShape>): 
 export const allTools: ReadonlyArray<AnyTool> = [
   // Composition / state
   eraseTool(getCompositionTool),
+  eraseTool(getBeatSnapTool),
+  eraseTool(setBeatSnapTool),
   // Clip operations
   eraseTool(triggerClipTool),
   eraseTool(selectClipTool),
   eraseTool(getClipThumbnailTool),
+  eraseTool(setClipPlayDirectionTool),
+  eraseTool(setClipPlayModeTool),
+  eraseTool(setClipPositionTool),
   // Layer operations
   eraseTool(setLayerOpacityTool),
   eraseTool(setLayerBypassTool),

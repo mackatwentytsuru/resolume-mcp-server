@@ -19,7 +19,7 @@ async function main(): Promise<void> {
 
   const server = new McpServer({
     name: "resolume-mcp-server",
-    version: "0.2.2",
+    version: "0.2.3",
   });
 
   registerTools(server, { client });

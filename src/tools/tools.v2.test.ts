@@ -28,6 +28,11 @@ function buildCtx(overrides: Partial<ResolumeClient> = {}) {
       },
     ]),
     setEffectParameter: vi.fn(async () => undefined),
+    setClipPlayDirection: vi.fn(async () => undefined),
+    setClipPlayMode: vi.fn(async () => undefined),
+    setClipPosition: vi.fn(async () => undefined),
+    getBeatSnap: vi.fn(async () => ({ value: "1 Bar", options: ["None", "1 Bar", "1/2 Bar"] })),
+    setBeatSnap: vi.fn(async () => undefined),
     ...overrides,
   } as unknown as ResolumeClient;
   return { client, ctx: { client } };
@@ -177,6 +182,69 @@ describe("resolume_list_layer_effects", () => {
     });
     const scale = parsed.effects[0].params.find((p) => p.name === "Scale");
     expect(scale).toMatchObject({ valuetype: "ParamRange", min: 0, max: 1000 });
+  });
+});
+
+describe("resolume_get_beat_snap", () => {
+  it("returns the snap state", async () => {
+    const { ctx } = buildCtx();
+    const result = await findTool("resolume_get_beat_snap").handler({}, ctx);
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as {
+      value: string;
+    };
+    expect(parsed.value).toBe("1 Bar");
+  });
+});
+
+describe("resolume_set_beat_snap", () => {
+  it("forwards the value", async () => {
+    const { client, ctx } = buildCtx();
+    await findTool("resolume_set_beat_snap").handler({ beatSnap: "1/2 Bar" }, ctx);
+    expect(client.setBeatSnap).toHaveBeenCalledWith("1/2 Bar");
+  });
+});
+
+describe("resolume_set_clip_play_direction", () => {
+  it("forwards layer/clip/direction", async () => {
+    const { client, ctx } = buildCtx();
+    await findTool("resolume_set_clip_play_direction").handler(
+      { layer: 1, clip: 2, direction: "||" },
+      ctx
+    );
+    expect(client.setClipPlayDirection).toHaveBeenCalledWith(1, 2, "||");
+  });
+
+  it("rejects invalid direction at schema layer", () => {
+    const tool = findTool("resolume_set_clip_play_direction");
+    const dz = (
+      tool.inputSchema as {
+        direction: { safeParse: (v: unknown) => { success: boolean } };
+      }
+    ).direction;
+    expect(dz.safeParse("play").success).toBe(false);
+    expect(dz.safeParse(">").success).toBe(true);
+  });
+});
+
+describe("resolume_set_clip_play_mode", () => {
+  it("forwards mode", async () => {
+    const { client, ctx } = buildCtx();
+    await findTool("resolume_set_clip_play_mode").handler(
+      { layer: 1, clip: 2, mode: "Bounce" },
+      ctx
+    );
+    expect(client.setClipPlayMode).toHaveBeenCalledWith(1, 2, "Bounce");
+  });
+});
+
+describe("resolume_set_clip_position", () => {
+  it("forwards position", async () => {
+    const { client, ctx } = buildCtx();
+    await findTool("resolume_set_clip_position").handler(
+      { layer: 1, clip: 2, position: 12.5 },
+      ctx
+    );
+    expect(client.setClipPosition).toHaveBeenCalledWith(1, 2, 12.5);
   });
 });
 

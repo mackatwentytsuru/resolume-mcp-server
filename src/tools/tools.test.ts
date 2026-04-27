@@ -18,6 +18,11 @@ function buildCtx(overrides: Partial<ResolumeClient> = {}) {
     triggerClip: vi.fn(async () => undefined),
     selectClip: vi.fn(async () => undefined),
     triggerColumn: vi.fn(async () => undefined),
+    setClipPlayDirection: vi.fn(async () => undefined),
+    setClipPlayMode: vi.fn(async () => undefined),
+    setClipPosition: vi.fn(async () => undefined),
+    getBeatSnap: vi.fn(async () => ({ value: "1 Bar", options: ["None", "1 Bar", "1/2 Bar"] })),
+    setBeatSnap: vi.fn(async () => undefined),
     selectDeck: vi.fn(async () => undefined),
     clearLayer: vi.fn(async () => undefined),
     setLayerOpacity: vi.fn(async () => undefined),
@@ -52,8 +57,8 @@ function findTool(name: string) {
 describe("tool registry", () => {
   it("registers all v0.2 tools with unique resolume_-prefixed names", () => {
     const names = allTools.map((t) => t.name);
-    // 18 tools as of v0.2.2.
-    expect(names.length).toBe(18);
+    // 23 tools as of v0.2.3.
+    expect(names.length).toBe(23);
     for (const n of names) {
       expect(n).toMatch(/^resolume_/);
     }
