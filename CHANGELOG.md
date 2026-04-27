@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.0] - 2026-04-27
+
+OSC integration. REST/WS handles state and control surfaces, but Resolume's OSC plane has three things REST cannot do at all: wildcard reads (`/composition/layers/*/clips/1/name` returns every layer's first-clip name in one round-trip), real-time playhead push (REST gives a snapshot, OSC pushes every frame), and a small set of trigger paths like `/composition/tempocontroller/resync` that aren't surfaced in the swagger.
+
+### Added (4 new tools, 36 total)
+
+- **`resolume_osc_send`** — fire-and-forget OSC message. Address + positional args (numbers auto-typed to int32/float32, strings, booleans). For one-shot triggers and special commands not in the REST API.
+- **`resolume_osc_query`** — sends an OSC `?` query and returns whatever Resolume echoes back within `timeoutMs` (default 1000ms). Supports wildcards. Fast bulk reads.
+- **`resolume_osc_subscribe`** — listens on the OSC OUT port for `durationMs` (cap 30s) and collects messages whose address matches a glob pattern. Key use: `/composition/layers/*/transport/position` for real-time playhead tracking. Stops early at `maxMessages`.
+- **`resolume_osc_status`** — probes whether Resolume is sending on the configured OSC OUT port; returns reachable bool, last-received timestamp, and host/port config.
+
+### New env vars
+
+- `RESOLUME_OSC_HOST` (default `127.0.0.1`) — same SSRF allowlist as `RESOLUME_HOST`
+- `RESOLUME_OSC_IN_PORT` (default `7000`) — Resolume's OSC IN
+- `RESOLUME_OSC_OUT_PORT` (default `7001`) — Resolume's OSC OUT
+
+### Implementation notes
+
+- Hand-rolled OSC 1.0 codec in `src/resolume/osc-codec.ts` (no external deps; supports `i`/`f`/`s`/`T`/`F` plus bundle decoding).
+- Stateless UDP client in `src/resolume/osc-client.ts` — each call creates and closes its own socket. No persistent listener so the MCP process never holds a port across tool calls.
+- Socket factory is injectable; tests use a fake socket to verify send/listen/match flows without real UDP.
+
+### Verified live
+
+`scripts/smoke-osc.mjs` against the user's running Arena (Tailscale endpoint, BPM 131.4, music playing): subscribed to `/composition/layers/*/transport/position` for 2s and received 649 playhead frames (~325/s); read-only `?` query for tempo round-tripped without mutating state; final REST read confirmed BPM unchanged at 131.4. **No disturbance to the running session.**
+
+### Known limitations (NOT in any API — confirmed)
+
+- No FFT or audio-level data on the OSC OUT plane (Resolume's audio analysis is internal, not exposed).
+- No per-parameter "sync to BPM" toggle — Resolume's clip beat-snap (`resolume_set_beat_snap`) and per-clip BPM sync (the `transport/controls/syncmode` clip path) are the only exposed BPM-sync mechanisms.
+- `resolume_osc_subscribe` binds the OSC OUT port exclusively. If another process already holds it, the bind fails with `EADDRINUSE` — close the other listener first.
+
 ## [0.3.0] - 2026-04-27
 
 Unblocks the v0.3 effect-management surface. Adding effects to a layer over Resolume's REST API was previously thought to require WebSocket plumbing because `POST /composition/layers/{n}/effects` returned 404. Turns out the missing piece was the `/add` suffix and a plain-text body containing the drag-drop URI (not JSON, not the `idstring`).

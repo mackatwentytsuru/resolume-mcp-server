@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { ResolumeClient } from "../resolume/client.js";
+import type { OscConfig } from "../config.js";
 
 /**
  * MCP tool result content. Uses an open shape so it composes with the SDK's
@@ -17,6 +18,8 @@ export interface ToolResult {
 
 export interface ToolContext {
   client: ResolumeClient;
+  /** OSC host/ports (added in v0.4 for OSC tools). */
+  osc?: OscConfig;
 }
 
 /**

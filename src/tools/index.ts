@@ -40,6 +40,10 @@ import {
 import { setEffectParameterTool } from "./effect/set-effect-param.js";
 import { addEffectToLayerTool } from "./effect/add-effect.js";
 import { removeEffectFromLayerTool } from "./effect/remove-effect.js";
+import { oscSendTool } from "./osc/send.js";
+import { oscQueryTool } from "./osc/query.js";
+import { oscSubscribeTool } from "./osc/subscribe.js";
+import { oscStatusTool } from "./osc/status.js";
 
 /**
  * Type-erased tool entry used by the registry. We cast individual tools
@@ -113,4 +117,9 @@ export const allTools: ReadonlyArray<AnyTool> = [
   eraseTool(setEffectParameterTool),
   eraseTool(addEffectToLayerTool),
   eraseTool(removeEffectFromLayerTool),
+  // OSC (v0.4)
+  eraseTool(oscSendTool),
+  eraseTool(oscQueryTool),
+  eraseTool(oscSubscribeTool),
+  eraseTool(oscStatusTool),
 ];

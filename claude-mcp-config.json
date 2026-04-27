@@ -5,7 +5,10 @@
       "args": ["./build/index.js"],
       "env": {
         "RESOLUME_HOST": "127.0.0.1",
-        "RESOLUME_PORT": "8080"
+        "RESOLUME_PORT": "8080",
+        "RESOLUME_OSC_HOST": "127.0.0.1",
+        "RESOLUME_OSC_IN_PORT": "7000",
+        "RESOLUME_OSC_OUT_PORT": "7001"
       }
     }
   }

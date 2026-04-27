@@ -23,7 +23,7 @@ async function main(): Promise<void> {
     version: VERSION,
   });
 
-  registerTools(server, { client });
+  registerTools(server, { client, osc: config.osc });
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

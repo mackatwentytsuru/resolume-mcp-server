@@ -64,10 +64,10 @@ function findTool(name: string) {
 }
 
 describe("tool registry", () => {
-  it("registers all v0.2 tools with unique resolume_-prefixed names", () => {
+  it("registers all v0.4 tools with unique resolume_-prefixed names", () => {
     const names = allTools.map((t) => t.name);
-    // 32 tools as of v0.3 (added resolume_add_effect_to_layer + resolume_remove_effect_from_layer).
-    expect(names.length).toBe(32);
+    // 36 tools as of v0.4 (added 4 OSC tools).
+    expect(names.length).toBe(36);
     for (const n of names) {
       expect(n).toMatch(/^resolume_/);
     }
@@ -87,6 +87,10 @@ describe("tool registry", () => {
       "resolume_set_effect_parameter",
       "resolume_add_effect_to_layer",
       "resolume_remove_effect_from_layer",
+      "resolume_osc_send",
+      "resolume_osc_query",
+      "resolume_osc_subscribe",
+      "resolume_osc_status",
     ];
     for (const expected of expectedCore) {
       expect(names).toContain(expected);
@@ -179,5 +183,132 @@ describe("resolume_select_clip", () => {
     const { client, ctx } = buildCtx();
     await findTool("resolume_select_clip").handler({ layer: 2, clip: 5 }, ctx);
     expect(client.selectClip).toHaveBeenCalledWith(2, 5);
+  });
+});
+
+// Mock the OSC client so tool tests exercise their handler paths without
+// touching real UDP. Each function returns deterministic data; the tool
+// layer's job is to convert handler args → client calls → ToolResult.
+vi.mock("../resolume/osc-client.js", () => ({
+  sendOsc: vi.fn(async () => undefined),
+  queryOsc: vi.fn(async () => [
+    { address: "/composition/master", args: [0.5], timestamp: 1700000000000 },
+  ]),
+  subscribeOsc: vi.fn(async () => [
+    { address: "/composition/layers/1/transport/position", args: [0.25], timestamp: 1700000000001 },
+    { address: "/composition/layers/2/transport/position", args: [0.75], timestamp: 1700000000002 },
+  ]),
+  probeOscStatus: vi.fn(async () => ({ reachable: true, lastReceived: 1700000000003 })),
+}));
+
+describe("OSC tools", () => {
+  const oscCtx = {
+    client: {} as unknown as ResolumeClient,
+    osc: { host: "127.0.0.1", inPort: 7000, outPort: 7001 },
+  };
+
+  it("resolume_osc_send returns InvalidArguments-style error when address omits leading slash", () => {
+    const tool = findTool("resolume_osc_send");
+    const schema = z.object(tool.inputSchema);
+    expect(schema.safeParse({ address: "no-slash", args: [] }).success).toBe(false);
+    expect(schema.safeParse({ address: "/foo", args: [1, "x", true] }).success).toBe(true);
+  });
+
+  it("resolume_osc_send errors when osc config absent", async () => {
+    const { ctx } = buildCtx();
+    const result = await findTool("resolume_osc_send").handler(
+      { address: "/foo", args: [] },
+      ctx
+    );
+    expect(result.isError).toBe(true);
+  });
+
+  it("resolume_osc_send forwards to client when osc config present", async () => {
+    const { sendOsc } = await import("../resolume/osc-client.js");
+    const result = await findTool("resolume_osc_send").handler(
+      { address: "/composition/tempocontroller/resync", args: [] },
+      oscCtx
+    );
+    expect(result.isError).toBeFalsy();
+    expect(sendOsc).toHaveBeenCalledWith(
+      "127.0.0.1",
+      7000,
+      "/composition/tempocontroller/resync",
+      []
+    );
+  });
+
+  it("resolume_osc_query rejects bad addresses and accepts wildcards", () => {
+    const tool = findTool("resolume_osc_query");
+    const schema = z.object(tool.inputSchema);
+    expect(schema.safeParse({ address: "" }).success).toBe(false);
+    expect(schema.safeParse({ address: "/composition/layers/*/name" }).success).toBe(true);
+  });
+
+  it("resolume_osc_query returns the mocked messages and count", async () => {
+    const result = await findTool("resolume_osc_query").handler(
+      { address: "/composition/master", timeoutMs: 100 },
+      oscCtx
+    );
+    expect(result.isError).toBeFalsy();
+    const json = JSON.parse((result.content[0] as { text: string }).text);
+    expect(json.count).toBe(1);
+    expect(json.messages[0].address).toBe("/composition/master");
+  });
+
+  it("resolume_osc_query errors when osc config absent", async () => {
+    const { ctx } = buildCtx();
+    const result = await findTool("resolume_osc_query").handler(
+      { address: "/x", timeoutMs: 100 },
+      ctx
+    );
+    expect(result.isError).toBe(true);
+  });
+
+  it("resolume_osc_subscribe enforces duration bounds", () => {
+    const tool = findTool("resolume_osc_subscribe");
+    const schema = z.object(tool.inputSchema);
+    expect(schema.safeParse({ addressPattern: "/foo/*", durationMs: 0 }).success).toBe(false);
+    expect(schema.safeParse({ addressPattern: "/foo/*", durationMs: 999_999 }).success).toBe(false);
+    expect(schema.safeParse({ addressPattern: "/foo/*", durationMs: 500 }).success).toBe(true);
+  });
+
+  it("resolume_osc_subscribe returns matched messages with timestamps", async () => {
+    const result = await findTool("resolume_osc_subscribe").handler(
+      {
+        addressPattern: "/composition/layers/*/transport/position",
+        durationMs: 200,
+        maxMessages: 50,
+      },
+      oscCtx
+    );
+    expect(result.isError).toBeFalsy();
+    const json = JSON.parse((result.content[0] as { text: string }).text);
+    expect(json.count).toBe(2);
+    expect(json.messages[0].timestamp).toBeTypeOf("number");
+  });
+
+  it("resolume_osc_subscribe errors when osc config absent", async () => {
+    const { ctx } = buildCtx();
+    const result = await findTool("resolume_osc_subscribe").handler(
+      { addressPattern: "/foo/*", durationMs: 100, maxMessages: 50 },
+      ctx
+    );
+    expect(result.isError).toBe(true);
+  });
+
+  it("resolume_osc_status returns reachable=true and config", async () => {
+    const result = await findTool("resolume_osc_status").handler({}, oscCtx);
+    expect(result.isError).toBeFalsy();
+    const json = JSON.parse((result.content[0] as { text: string }).text);
+    expect(json.reachable).toBe(true);
+    expect(json.inPort).toBe(7000);
+    expect(json.outPort).toBe(7001);
+  });
+
+  it("resolume_osc_status errors when osc config absent", async () => {
+    const { ctx } = buildCtx();
+    const result = await findTool("resolume_osc_status").handler({}, ctx);
+    expect(result.isError).toBe(true);
   });
 });

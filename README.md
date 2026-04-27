@@ -83,8 +83,11 @@ Add to `.mcp.json` in your project root:
 | `RESOLUME_HOST` | `127.0.0.1` | Host running Resolume's Web Server |
 | `RESOLUME_PORT` | `8080` | Web Server port (8080 Arena/Avenue, 8081 Wire) |
 | `RESOLUME_TIMEOUT_MS` | `10000` | Per-request timeout in milliseconds |
+| `RESOLUME_OSC_HOST` | `127.0.0.1` | Host running Resolume's OSC ports (same as REST host in most setups) |
+| `RESOLUME_OSC_IN_PORT` | `7000` | Resolume's OSC IN port — we send to this |
+| `RESOLUME_OSC_OUT_PORT` | `7001` | Resolume's OSC OUT port — we listen on this for queries/subscriptions |
 
-## Tools (v0.2.5)
+## Tools (v0.4.0)
 
 All tools are prefixed with `resolume_` to avoid collision with other MCP servers. Indices are **1-based** to match Resolume's UI.
 
@@ -137,6 +140,18 @@ All tools are prefixed with `resolume_` to avoid collision with other MCP server
 | `resolume_list_video_effects` | ~105 video effects available globally, with `idstring` + `name`. |
 | `resolume_list_layer_effects` | Effects on a layer with full parameter metadata: type, current value, min/max, and choice options. |
 | `resolume_set_effect_parameter` | Mutates any parameter on an attached effect. Auto-coerces string-encoded numbers/booleans to match the parameter's declared type. |
+| `resolume_add_effect_to_layer` | Adds a video effect by name to the end of a layer's effect chain. |
+| `resolume_remove_effect_from_layer` | Removes the effect at a 1-based position. **Destructive** — requires `confirm: true`. |
+
+### OSC (v0.4)
+OSC complements REST/WS with a few things they can't do: wildcard reads, real-time playhead push, and a handful of trigger paths not in the REST swagger. Requires Resolume's `Preferences > OSC > OSC Input/Output` to be enabled.
+
+| Tool | What it does |
+|------|--------------|
+| `resolume_osc_send` | One-shot OSC message. Power-user escape hatch for paths like `/composition/tempocontroller/resync`. |
+| `resolume_osc_query` | Sends `?` query (with optional wildcards) and returns Resolume's echoed values. Fastest way to read many values at once. |
+| `resolume_osc_subscribe` | Listens on the OSC OUT port for a duration and collects messages matching a glob pattern. Use `/composition/layers/*/transport/position` for real-time playhead tracking. |
+| `resolume_osc_status` | Probes whether Resolume is broadcasting on the configured OSC OUT port. |
 
 ## Example prompts
 
@@ -153,9 +168,9 @@ All tools are prefixed with `resolume_` to avoid collision with other MCP server
 ## Roadmap
 
 - ~~**v0.2** — Tempo, deck, blend mode, effects (set parameters)~~ ✅ shipped
-- **v0.3** — WebSocket subscriptions + state cache, add/remove effects (POST `/effects`)
-- **v0.4** — `resolume_rest` whitelisted escape hatch for power users
-- **v0.5** — Advanced Output (screens, slices)
+- ~~**v0.3** — Add/remove effects~~ ✅ shipped
+- ~~**v0.4** — OSC integration (send/query/subscribe/status)~~ ✅ shipped
+- **v0.5** — `resolume_rest` whitelisted escape hatch for power users, Advanced Output (screens, slices)
 
 See [issues](https://github.com/mackatwentytsuru/resolume-mcp-server/issues) to vote or contribute.
 

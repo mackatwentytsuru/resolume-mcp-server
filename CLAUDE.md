@@ -6,10 +6,12 @@ Resolume Arena/Avenue VJ ソフトウェアを Claude などの LLM から自然
 ## アーキテクチャ
 
 ```
-LLM (Claude) <--stdio--> MCP Server (Node.js) <--HTTP--> Resolume Web Server
+LLM (Claude) <--stdio--> MCP Server (Node.js) ──HTTP/WS─→ Resolume Web Server (8080)
+                                              ──UDP/OSC─→ Resolume OSC IN/OUT (7000/7001)
 ```
 
 Resolume の Web Server は Preferences > Web Server で有効化可能。デフォルトで `http://127.0.0.1:8080` を listen。
+OSC は Preferences > OSC で有効化。MCP は OSC IN port (default 7000) に送信、OSC OUT port (default 7001) を listen。
 
 ## ディレクトリ構成
 
@@ -21,13 +23,16 @@ resolume-mcp-server/
 │   ├── resolume/
 │   │   ├── client.ts               # 高レベルファサード (validation, summary)
 │   │   ├── rest.ts                 # 型付き REST クライアント (fetch + abort)
+│   │   ├── osc-codec.ts            # OSC 1.0 encoder/decoder (deps なし)
+│   │   ├── osc-client.ts           # stateless UDP send/query/subscribe/probe
 │   │   └── types.ts                # Zod スキーマ + TS 型
 │   ├── tools/
 │   │   ├── types.ts                # ToolDefinition + ToolResult 型
 │   │   ├── index.ts                # 全ツール集約 (型消去)
 │   │   ├── composition/get-composition.ts
 │   │   ├── clip/{trigger,select,get-thumbnail}.ts
-│   │   └── layer/{set-opacity,clear-layer}.ts
+│   │   ├── layer/{set-opacity,clear-layer}.ts
+│   │   └── osc/{send,query,subscribe,status}.ts
 │   ├── server/
 │   │   └── registerTools.ts        # SDK サーバーへのツール登録 + エラー整形
 │   └── errors/
@@ -86,6 +91,26 @@ npm run dev            # tsc --watch
 - 非 ASCII クリップ名で REST API が壊れるエンドポイントがある(将来 v0.2 でツール側で警告検出予定)
 - `POST` 系の一部はレスポンスを返さないことがある → 楽観的成功扱い + タイムアウト設計
 - `/api/v1/product` は 7.x 後期で追加。古いバージョンでは 404 → `null` で吸収
+
+## OSC 補完面 (v0.4)
+
+REST/WS では実装できない or 効率が悪いことを OSC で補う。
+
+- **Wildcard クエリ**: `/composition/layers/*/clips/1/name` 一発で全レイヤーの最初のクリップ名を取れる。REST だと N 回の GET が必要。
+- **Real-time playhead push**: `/composition/layers/*/transport/position` を OSC OUT で受けると毎フレーム届く。REST はスナップショット限定。time-based VJing の心臓部。
+- **`/composition/tempocontroller/resync` 等のトリガー**: Swagger に載っていない隠しパスがある。`resolume_osc_send` で叩ける。
+- **低レイテンシ**: UDP fire-and-forget なので REST より一桁速い。
+
+### OSC でできないこと(全 API 横断で確認済み)
+
+- **FFT / オーディオレベル**: Resolume の音響解析は内部処理で外部公開なし。
+- **パラメータ単位の "BPM 同期" トグル**: composition の `clipbeatsnap` (set_beat_snap ツール) と clip 単位の `transport/controls/syncmode` だけが BPM 同期の窓口。
+
+### 実装上の注意
+
+- `osc-client.ts` は完全に stateless。各呼び出しでソケット生成→クローズ。常駐リスナーは持たない(ユーザーが別の OSC ツールを 7001 にバインドしているケースを壊さないため)。
+- `resolume_osc_subscribe` は OSC OUT port を排他バインドする → 既に占有されていれば EADDRINUSE。`resolume_osc_status` で先にプローブ可。
+- 注意: `/composition/tempocontroller/tempo` への OSC 値送信は **正規化 0..1** 値。BPM の生数値を送ると min..max にスケールされて壊れる(REST と挙動が違う)。Resolume の OSC は ParamRange を 0..1 で扱う規約。
 
 ## 参考リンク
 

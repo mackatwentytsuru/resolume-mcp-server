@@ -7,6 +7,7 @@ describe("loadConfig", () => {
       host: "127.0.0.1",
       port: 8080,
       timeoutMs: 10_000,
+      osc: { host: "127.0.0.1", inPort: 7000, outPort: 7001 },
     });
   });
 
@@ -21,7 +22,27 @@ describe("loadConfig", () => {
       host: "192.168.1.10",
       port: 9090,
       timeoutMs: 5000,
+      osc: { host: "127.0.0.1", inPort: 7000, outPort: 7001 },
     });
+  });
+
+  it("respects OSC environment overrides", () => {
+    expect(
+      loadConfig({
+        RESOLUME_OSC_HOST: "100.74.26.128",
+        RESOLUME_OSC_IN_PORT: "7100",
+        RESOLUME_OSC_OUT_PORT: "7101",
+      }).osc
+    ).toEqual({ host: "100.74.26.128", inPort: 7100, outPort: 7101 });
+  });
+
+  it("rejects public OSC host to prevent SSRF", () => {
+    expect(() => loadConfig({ RESOLUME_OSC_HOST: "8.8.8.8" })).toThrow();
+  });
+
+  it("rejects invalid OSC ports", () => {
+    expect(() => loadConfig({ RESOLUME_OSC_IN_PORT: "0" })).toThrow();
+    expect(() => loadConfig({ RESOLUME_OSC_OUT_PORT: "70000" })).toThrow();
   });
 
   it("accepts localhost and IPv6 loopback", () => {
