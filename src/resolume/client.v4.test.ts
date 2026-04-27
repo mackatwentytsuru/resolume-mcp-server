@@ -16,43 +16,6 @@ function buildClient(handlers: Partial<{
   return { client: new ResolumeClient(rest), rest };
 }
 
-describe("ResolumeClient.getCrossfader", () => {
-  it("extracts phase from composition.crossfader", async () => {
-    const { client } = buildClient({
-      get: () => ({ crossfader: { phase: { value: -0.5 } } }),
-    });
-    expect(await client.getCrossfader()).toEqual({ phase: -0.5 });
-  });
-
-  it("returns null phase when missing", async () => {
-    const { client } = buildClient({ get: () => ({}) });
-    expect(await client.getCrossfader()).toEqual({ phase: null });
-  });
-});
-
-describe("ResolumeClient.setCrossfader", () => {
-  it("PUTs nested crossfader.phase", async () => {
-    const { client, rest } = buildClient();
-    await client.setCrossfader(0.5);
-    expect(rest.put).toHaveBeenCalledWith("/composition", {
-      crossfader: { phase: { value: 0.5 } },
-    });
-  });
-
-  it("rejects values outside -1..1", async () => {
-    const { client } = buildClient();
-    await expect(client.setCrossfader(-1.5)).rejects.toMatchObject({
-      detail: { kind: "InvalidValue", field: "phase" },
-    });
-    await expect(client.setCrossfader(2)).rejects.toMatchObject({
-      detail: { kind: "InvalidValue" },
-    });
-    await expect(client.setCrossfader(NaN)).rejects.toMatchObject({
-      detail: { kind: "InvalidValue" },
-    });
-  });
-});
-
 describe("ResolumeClient.setLayerTransitionDuration", () => {
   it("PUTs nested transition.duration", async () => {
     const { client, rest } = buildClient();

@@ -1,17 +1,18 @@
 import { ResolumeRestClient } from "./rest.js";
-import {
-  CompositionSchema,
-  ProductInfoSchema,
-  type Composition,
-  type CompositionSummary,
-  type ProductInfo,
-  type TempoState,
-  type EffectCatalogEntry,
+import type {
+  Composition,
+  CompositionSummary,
+  ProductInfo,
+  TempoState,
+  EffectCatalogEntry,
 } from "./types.js";
 import { ResolumeApiError } from "../errors/types.js";
-import { assertIndex, extractName, extractValue } from "./shared.js";
+import { assertIndex } from "./shared.js";
+import * as composition from "./composition.js";
 import * as effects from "./effects.js";
 import * as tempo from "./tempo.js";
+
+export { summarizeComposition } from "./composition.js";
 
 /**
  * High-level facade over the Resolume REST API. This is the surface tools
@@ -38,34 +39,25 @@ export class ResolumeClient {
     return new ResolumeClient(rest);
   }
 
-  // ---- Composition / state ----
+  // ---- Composition / state (implementations in ./composition.ts) ----
 
   /** Returns the full raw composition tree as Resolume serves it. */
   async getComposition(): Promise<Composition> {
-    const raw = await this.rest.get("/composition");
-    return CompositionSchema.parse(raw);
+    return composition.getComposition(this.rest);
   }
 
   /** Resolume version + product info. Returns null on Resolume builds where /product 404s. */
   async getProductInfo(): Promise<ProductInfo | null> {
-    try {
-      const raw = await this.rest.get("/product");
-      return ProductInfoSchema.parse(raw);
-    } catch (err) {
-      if (err instanceof ResolumeApiError && err.detail.kind === "NotFound") {
-        return null;
-      }
-      throw err;
-    }
+    return composition.getProductInfo(this.rest);
   }
 
   /** Compact LLM-facing summary: version, BPM, layer/column/deck overview. */
   async getCompositionSummary(): Promise<CompositionSummary> {
-    const [composition, product] = await Promise.all([
+    const [comp, product] = await Promise.all([
       this.getComposition(),
       this.getProductInfo(),
     ]);
-    return summarizeComposition(composition, product);
+    return composition.summarizeComposition(comp, product);
   }
 
   // ---- Clip / column / deck actions ----
@@ -86,14 +78,12 @@ export class ResolumeClient {
 
   /** Fires every clip in the column simultaneously across all layers. */
   async triggerColumn(column: number): Promise<void> {
-    assertIndex("column", column);
-    await this.rest.post(`/composition/columns/${column}/connect`);
+    return composition.triggerColumn(this.rest, column);
   }
 
   /** Switches the active deck. Decks act as scene/song banks. */
   async selectDeck(deck: number): Promise<void> {
-    assertIndex("deck", deck);
-    await this.rest.post(`/composition/decks/${deck}/select`);
+    return composition.selectDeck(this.rest, deck);
   }
 
   /** Disconnects all clips on the layer (layer goes black). */
@@ -200,29 +190,16 @@ export class ResolumeClient {
     return opts.filter((o): o is string => typeof o === "string");
   }
 
-  // ---- Crossfader ----
+  // ---- Crossfader (implementations in ./composition.ts) ----
 
   /** Returns the crossfader phase (-1 = full A, 0 = center, 1 = full B). */
   async getCrossfader(): Promise<{ phase: number | null }> {
-    const composition = await this.getComposition();
-    const cf = composition.crossfader as { phase?: { value?: unknown } } | undefined;
-    const v = cf?.phase?.value;
-    return { phase: typeof v === "number" ? v : null };
+    return composition.getCrossfader(this.rest);
   }
 
   /** Sets the crossfader phase. -1 = side A, 0 = center, 1 = side B. */
   async setCrossfader(phase: number): Promise<void> {
-    if (!Number.isFinite(phase) || phase < -1 || phase > 1) {
-      throw new ResolumeApiError({
-        kind: "InvalidValue",
-        field: "phase",
-        value: phase,
-        hint: "Crossfader phase must be a number in -1..1 (-1 = side A, 0 = center, 1 = side B).",
-      });
-    }
-    await this.rest.put("/composition", {
-      crossfader: { phase: { value: phase } },
-    });
+    return composition.setCrossfader(this.rest, phase);
   }
 
   // ---- Layer transition ----
@@ -320,39 +297,14 @@ export class ResolumeClient {
   async removeEffectFromLayer(layer: number, effectIndex: number): Promise<void> {
     return effects.removeEffectFromLayer(this.rest, layer, effectIndex);
   }
-  // ---- Composition-level beat snap / trigger style ----
+  // ---- Composition-level beat snap (implementations in ./composition.ts) ----
 
   async getBeatSnap(): Promise<{ value: string | null; options: string[] }> {
-    const composition = await this.getComposition();
-    const cbs = composition.clipbeatsnap as { value?: unknown; options?: unknown[] } | undefined;
-    const value = typeof cbs?.value === "string" ? cbs.value : null;
-    const options = Array.isArray(cbs?.options)
-      ? cbs.options.filter((o): o is string => typeof o === "string")
-      : [];
-    return { value, options };
+    return composition.getBeatSnap(this.rest);
   }
 
   async setBeatSnap(value: string): Promise<void> {
-    if (typeof value !== "string" || value.length === 0) {
-      throw new ResolumeApiError({
-        kind: "InvalidValue",
-        field: "beatSnap",
-        value,
-        hint: "beatSnap must be a non-empty string. Call resolume_get_beat_snap to enumerate options.",
-      });
-    }
-    const { options } = await this.getBeatSnap();
-    if (options.length > 0 && !options.includes(value)) {
-      throw new ResolumeApiError({
-        kind: "InvalidValue",
-        field: "beatSnap",
-        value,
-        hint: `Unknown beat snap "${value}". Available: ${options.join(", ")}.`,
-      });
-    }
-    await this.rest.put("/composition", {
-      clipbeatsnap: { value },
-    });
+    return composition.setBeatSnap(this.rest, value);
   }
 
   // ---- Clip transport ----
@@ -454,47 +406,3 @@ export class ResolumeClient {
   }
 }
 
-export function summarizeComposition(
-  composition: Composition,
-  product: ProductInfo | null
-): CompositionSummary {
-  const layers = composition.layers ?? [];
-  const columns = composition.columns ?? [];
-  const decks = composition.decks ?? [];
-  const tc = composition.tempocontroller as
-    | { tempo?: { value?: unknown } }
-    | undefined;
-  const bpmValue = tc?.tempo?.value;
-
-  return {
-    productVersion: product
-      ? [product.major, product.minor, product.micro, product.revision]
-          .filter((x) => x !== undefined)
-          .join(".") || null
-      : null,
-    bpm: typeof bpmValue === "number" ? bpmValue : null,
-    layerCount: layers.length,
-    columnCount: columns.length,
-    deckCount: decks.length,
-    layers: layers.map((layer, idx) => {
-      const clips = layer.clips ?? [];
-      const connected = clips.findIndex((c) => extractValue(c.connected) === "Connected");
-      return {
-        index: idx + 1,
-        name: extractName(layer.name) ?? `Layer ${idx + 1}`,
-        clipCount: clips.length,
-        connectedClip: connected >= 0 ? connected + 1 : null,
-        bypassed: extractValue(layer.bypassed) === true,
-      };
-    }),
-    columns: columns.map((column, idx) => ({
-      index: idx + 1,
-      name: extractName(column.name) ?? `Column ${idx + 1}`,
-    })),
-    decks: decks.map((deck, idx) => ({
-      index: idx + 1,
-      name: extractName(deck.name) ?? `Deck ${idx + 1}`,
-      selected: extractValue(deck.selected) === true,
-    })),
-  };
-}

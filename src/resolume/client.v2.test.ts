@@ -18,36 +18,6 @@ function buildClient(handlers: Partial<{
   return { client: new ResolumeClient(rest), rest };
 }
 
-describe("ResolumeClient.triggerColumn", () => {
-  it("POSTs to the column connect endpoint", async () => {
-    const { client, rest } = buildClient();
-    await client.triggerColumn(3);
-    expect(rest.post).toHaveBeenCalledWith("/composition/columns/3/connect");
-  });
-
-  it("rejects invalid index", async () => {
-    const { client } = buildClient();
-    await expect(client.triggerColumn(0)).rejects.toMatchObject({
-      detail: { kind: "InvalidIndex", what: "column" },
-    });
-  });
-});
-
-describe("ResolumeClient.selectDeck", () => {
-  it("POSTs to the deck select endpoint", async () => {
-    const { client, rest } = buildClient();
-    await client.selectDeck(2);
-    expect(rest.post).toHaveBeenCalledWith("/composition/decks/2/select");
-  });
-
-  it("rejects invalid index", async () => {
-    const { client } = buildClient();
-    await expect(client.selectDeck(-1)).rejects.toMatchObject({
-      detail: { kind: "InvalidIndex", what: "deck" },
-    });
-  });
-});
-
 describe("ResolumeClient.setLayerBypass", () => {
   it("PUTs nested bypassed body", async () => {
     const { client, rest } = buildClient();

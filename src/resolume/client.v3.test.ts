@@ -16,60 +16,6 @@ function buildClient(handlers: Partial<{
   return { client: new ResolumeClient(rest), rest };
 }
 
-describe("ResolumeClient.getBeatSnap", () => {
-  it("returns value and options from composition", async () => {
-    const { client } = buildClient({
-      get: () => ({
-        clipbeatsnap: {
-          value: "1 Bar",
-          options: ["None", "1 Bar", "1/2 Bar"],
-        },
-      }),
-    });
-    expect(await client.getBeatSnap()).toEqual({
-      value: "1 Bar",
-      options: ["None", "1 Bar", "1/2 Bar"],
-    });
-  });
-
-  it("returns nulls/empty when composition lacks the field", async () => {
-    const { client } = buildClient({ get: () => ({}) });
-    expect(await client.getBeatSnap()).toEqual({ value: null, options: [] });
-  });
-});
-
-describe("ResolumeClient.setBeatSnap", () => {
-  it("PUTs the value to /composition", async () => {
-    const { client, rest } = buildClient({
-      get: () => ({
-        clipbeatsnap: { options: ["None", "1 Bar", "1/2 Bar"] },
-      }),
-    });
-    await client.setBeatSnap("1/2 Bar");
-    expect(rest.put).toHaveBeenCalledWith("/composition", {
-      clipbeatsnap: { value: "1/2 Bar" },
-    });
-  });
-
-  it("rejects unknown values with the available list in the hint", async () => {
-    const { client } = buildClient({
-      get: () => ({
-        clipbeatsnap: { options: ["None", "1 Bar"] },
-      }),
-    });
-    await expect(client.setBeatSnap("Bogus")).rejects.toMatchObject({
-      detail: { kind: "InvalidValue", field: "beatSnap" },
-    });
-  });
-
-  it("rejects empty string", async () => {
-    const { client } = buildClient();
-    await expect(client.setBeatSnap("")).rejects.toMatchObject({
-      detail: { kind: "InvalidValue" },
-    });
-  });
-});
-
 describe("ResolumeClient.setClipPlayDirection", () => {
   it("PUTs nested transport body for forward play", async () => {
     const { client, rest } = buildClient();

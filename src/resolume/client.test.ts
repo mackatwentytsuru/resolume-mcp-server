@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { ResolumeClient, summarizeComposition } from "./client.js";
+import { ResolumeClient } from "./client.js";
 import { ResolumeRestClient } from "./rest.js";
 import { ResolumeApiError } from "../errors/types.js";
 
@@ -81,44 +81,6 @@ describe("ResolumeClient.selectClip", () => {
   });
 });
 
-describe("ResolumeClient.getProductInfo", () => {
-  it("returns parsed info on success", async () => {
-    const { client } = buildClient({
-      get: () => ({ name: "Arena", major: 7, minor: 20, micro: 0, revision: 1 }),
-    });
-    const info = await client.getProductInfo();
-    expect(info).toMatchObject({ name: "Arena", major: 7 });
-  });
-
-  it("returns null when /product is unavailable on older versions", async () => {
-    const { client } = buildClient({
-      get: () => {
-        throw new ResolumeApiError({
-          kind: "NotFound",
-          path: "/product",
-          hint: "older version",
-        });
-      },
-    });
-    const info = await client.getProductInfo();
-    expect(info).toBeNull();
-  });
-
-  it("propagates non-NotFound errors", async () => {
-    const { client } = buildClient({
-      get: () => {
-        throw new ResolumeApiError({
-          kind: "ResolumeNotRunning",
-          hint: "launch resolume",
-        });
-      },
-    });
-    await expect(client.getProductInfo()).rejects.toMatchObject({
-      detail: { kind: "ResolumeNotRunning" },
-    });
-  });
-});
-
 describe("ResolumeClient.getClipThumbnail", () => {
   it("appends a cache-busting timestamp as a query parameter", async () => {
     const { client, rest } = buildClient();
@@ -145,72 +107,3 @@ describe("ResolumeClient.fromConfig", () => {
   });
 });
 
-describe("summarizeComposition", () => {
-  it("produces an LLM-friendly projection", () => {
-    const summary = summarizeComposition(
-      {
-        layers: [
-          {
-            name: { value: "BG" },
-            clips: [
-              { name: { value: "alpha" }, connected: { value: "Disconnected" } },
-              { name: { value: "beta" }, connected: { value: "Connected" } },
-            ],
-          },
-          { clips: [] },
-        ],
-        columns: [{ name: { value: "Verse" } }, {}],
-        decks: [{ name: { value: "Main" }, selected: { value: true } }],
-      },
-      { major: 7, minor: 18, micro: 0 }
-    );
-
-    expect(summary).toEqual({
-      productVersion: "7.18.0",
-      bpm: null,
-      layerCount: 2,
-      columnCount: 2,
-      deckCount: 1,
-      layers: [
-        { index: 1, name: "BG", clipCount: 2, connectedClip: 2, bypassed: false },
-        { index: 2, name: "Layer 2", clipCount: 0, connectedClip: null, bypassed: false },
-      ],
-      columns: [
-        { index: 1, name: "Verse" },
-        { index: 2, name: "Column 2" },
-      ],
-      decks: [{ index: 1, name: "Main", selected: true }],
-    });
-  });
-
-  it("handles missing product info", () => {
-    const summary = summarizeComposition({ layers: [], columns: [], decks: [] }, null);
-    expect(summary.productVersion).toBeNull();
-    expect(summary.bpm).toBeNull();
-  });
-
-  it("surfaces tempocontroller BPM when present", () => {
-    const summary = summarizeComposition(
-      {
-        layers: [],
-        columns: [],
-        decks: [],
-        tempocontroller: { tempo: { value: 128 } },
-      },
-      null
-    );
-    expect(summary.bpm).toBe(128);
-  });
-
-  it("reflects layer bypass state", () => {
-    const summary = summarizeComposition(
-      {
-        layers: [{ name: { value: "muted" }, bypassed: { value: true }, clips: [] }],
-        columns: [],
-        decks: [],
-      },
-      null
-    );
-    expect(summary.layers[0].bypassed).toBe(true);
-  });
-});
