@@ -229,7 +229,7 @@
       "destructive": false,
       "file": "src/tools/tempo/tap-tempo.ts",
       "name": "resolume_tap_tempo",
-      "stability": "stable",
+      "stability": "beta",
       "symbol": "tapTempoTool"
     },
     {
