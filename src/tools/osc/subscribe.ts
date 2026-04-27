@@ -8,7 +8,7 @@ const inputSchema = {
     .min(1)
     .startsWith("/", { message: "OSC address pattern must begin with '/'." })
     .describe(
-      "Glob pattern with '*' wildcards. Examples: '/composition/layers/*/transport/position' (all playheads), '/composition/tempocontroller/*' (tempo controller events)."
+      "Glob pattern with '*' wildcards. '*' is SEGMENT-BOUND (OSC 1.0): matches one path segment, not '/'. Examples: '/composition/layers/*/clips/*/transport/position' (all clip playheads — note 'clips/*' is required because Resolume's actual broadcast includes clip index), '/composition/layers/*/position' (layer-level positions), '/composition/tempocontroller/*'. Resolume actually broadcasts: layers/N/position, layers/N/clips/M/transport/position, selectedclip/transport/position. ⚠️ Playhead value is NORMALIZED 0..1, not milliseconds."
     ),
   durationMs: z
     .number()
@@ -30,7 +30,7 @@ export const oscSubscribeTool: ToolDefinition<typeof inputSchema> = {
   name: "resolume_osc_subscribe",
   title: "Subscribe to OSC stream briefly",
   description:
-    "Listens on Resolume's OSC OUT port for the given duration and collects messages whose address matches the glob pattern. Key use: real-time playhead tracking via '/composition/layers/*/transport/position' — REST only gives a snapshot, OSC pushes every frame. NOTE: binds the configured OSC OUT port; will fail with EADDRINUSE if another process is already listening (e.g. a probe script).",
+    "Listens on Resolume's OSC OUT port for the given duration and collects messages whose address matches the glob pattern. Key use: real-time playhead tracking via '/composition/layers/*/clips/*/transport/position' — REST only gives a snapshot, OSC pushes every frame at ~325 msg/s (live verified). NOTE: binds the configured OSC OUT port; will fail with EADDRINUSE if another process is already listening (e.g. a probe script).",
   inputSchema,
   handler: async (args, ctx) => {
     if (!ctx.osc) return errorResult("OSC config missing — server not initialized with OSC support.");

@@ -97,7 +97,11 @@ npm run dev            # tsc --watch
 REST/WS では実装できない or 効率が悪いことを OSC で補う。
 
 - **Wildcard クエリ**: `/composition/layers/*/clips/1/name` 一発で全レイヤーの最初のクリップ名を取れる。REST だと N 回の GET が必要。
-- **Real-time playhead push**: `/composition/layers/*/transport/position` を OSC OUT で受けると毎フレーム届く。REST はスナップショット限定。time-based VJing の心臓部。
+- **Real-time playhead push**: `/composition/layers/*/clips/*/transport/position` を OSC OUT で受けると毎フレーム届く(~325 msg/s 実測)。REST はスナップショット限定。time-based VJing の心臓部。
+  - ⚠️ transport/position は **clip レベル**(`layers/N/clips/M/transport/position`)。`layers/N/transport/position`(clips抜き)は**存在しない** — 0マッチで silent fail する。
+  - 観測される実アドレス(live verified, 4s capture, 2911 msgs): `/composition/layers/N/position`(レイヤー位置), `/composition/layers/N/clips/M/transport/position`(クリップ再生位置), `/composition/selectedclip/transport/position`(選択中クリップ — bonus)
+  - OSC `*` ワイルドカードは **セグメント境界限定**(OSC 1.0仕様)。`/a/*/b` は OK だが `/a/*` で `/a/b/c` は NG。
+  - **playhead value は正規化 0..1**(REST の `transport.position.value` は ms — 単位が違う)
 - **`/composition/tempocontroller/resync` 等のトリガー**: Swagger に載っていない隠しパスがある。`resolume_osc_send` で叩ける。
 - **低レイテンシ**: UDP fire-and-forget なので REST より一桁速い。
 

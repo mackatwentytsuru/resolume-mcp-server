@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-04-27
+
+Documentation and tool-description fixes from comprehensive live testing of v0.4.0 (3 parallel verification agents, 10+ minute live runs against Arena 7.23.2). No code-level bugs found in 36 tools — all silent-no-op-zero, broken-zero. Fixes are purely accuracy improvements.
+
+### Fixed (documentation)
+
+- **OSC playhead path**: `CLAUDE.md`, `README.md`, and the `resolume_osc_subscribe` tool description all advertised `/composition/layers/*/transport/position` which never matches because Resolume actually broadcasts at `/composition/layers/{N}/clips/{M}/transport/position` (transport position is at the **clip** level, not layer). Fixed in 4 places. Verified by 4-second live OSC capture confirming the 5 actual broadcast addresses.
+- **OSC `*` semantics**: `osc_subscribe` description now warns that `*` is segment-bound (OSC 1.0) — `/a/*` will not match `/a/b/c`.
+- **`trigger_clip` description**: now warns that rapid triggers under wider beat-snap windows get silently coalesced by Resolume (only the last trigger per snap window connects).
+
+### Added
+
+- **`examples/osc-realtime-vj.mjs`** — runnable end-to-end OSC reactive VJ demo: subscribes to L1 audio playhead, drives L2 effects through 4 phases of a song based on actual playhead position. Full state restore on exit. ~466 lines, no extra deps.
+- **`examples/README.md`** — prerequisites, run instructions, customization guide.
+- **Documented OSC quirks discovered during live testing**:
+  - OSC playhead value is **normalized 0..1**, NOT milliseconds (REST is in ms — they differ!)
+  - Effect names with spaces in `effect:///video/{Name}` URI must be **percent-encoded** (`Hue%20Rotate`, not `Hue Rotate`)
+  - Effects expose two name fields: `name` (compact) and `display_name` (with spaces) — match against both for removal
+  - `/composition/selectedclip/transport/position` is also broadcast — useful bonus address
+
+### Verified
+
+228 tests pass, 36/36 tools verified live (snapshot → mutate → verify → restore), 6 real-world VJ scenarios run end-to-end (3 PASS, 2 PASS-with-observed-quirks documented above, 1 PASS).
+
 ## [0.4.0] - 2026-04-27
 
 OSC integration. REST/WS handles state and control surfaces, but Resolume's OSC plane has three things REST cannot do at all: wildcard reads (`/composition/layers/*/clips/1/name` returns every layer's first-clip name in one round-trip), real-time playhead push (REST gives a snapshot, OSC pushes every frame), and a small set of trigger paths like `/composition/tempocontroller/resync` that aren't surfaced in the swagger.

@@ -150,7 +150,7 @@ OSC complements REST/WS with a few things they can't do: wildcard reads, real-ti
 |------|--------------|
 | `resolume_osc_send` | One-shot OSC message. Power-user escape hatch for paths like `/composition/tempocontroller/resync`. |
 | `resolume_osc_query` | Sends `?` query (with optional wildcards) and returns Resolume's echoed values. Fastest way to read many values at once. |
-| `resolume_osc_subscribe` | Listens on the OSC OUT port for a duration and collects messages matching a glob pattern. Use `/composition/layers/*/transport/position` for real-time playhead tracking. |
+| `resolume_osc_subscribe` | Listens on the OSC OUT port for a duration and collects messages matching a glob pattern. Use `/composition/layers/*/clips/*/transport/position` for real-time clip-playhead tracking (~325 msg/s). ⚠️ `*` is segment-bound (OSC 1.0): `/a/*/b` works, `/a/*` won't match `/a/b/c`. Playhead values are normalized 0..1. |
 | `resolume_osc_status` | Probes whether Resolume is broadcasting on the configured OSC OUT port. |
 
 ## Example prompts
