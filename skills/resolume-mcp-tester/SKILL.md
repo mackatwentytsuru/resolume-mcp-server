@@ -1,7 +1,7 @@
 ---
 name: resolume-mcp-tester
 description: Test and operate the Resolume MCP server (resolume-mcp-server) end-to-end against a live Resolume Arena. Use when verifying tool behavior, running smoke tests, doing safe live VJ demos, or validating new tools added to the project. Includes white-out prevention rules, state restoration patterns, and agent invocation templates.
-version: 0.4.2
+version: 0.5.0
 source: extracted from resolume-mcp-server git history (mirrors package.json version per skills/README.md policy)
 ---
 
@@ -27,15 +27,38 @@ The MCP server has 3 communication channels with Resolume:
 | **OSC IN** `udp://127.0.0.1:7000` | Trigger/parameter writes | 7000 | `resolume_osc_send` |
 | **OSC OUT** `udp://127.0.0.1:7001` | Real-time push from Resolume | 7001 | `resolume_osc_query`, `resolume_osc_subscribe` |
 
-**Tool catalog (v0.4.2 — 36 tools)** — see project `README.md` for the canonical list. Categories:
+**Tool catalog (v0.5.0 — 36 tools)** — see project `README.md` for the canonical list. Categories:
 
 - **Composition**: `get_composition`, `get_beat_snap`, `set_beat_snap`, `get_crossfader`, `set_crossfader`
 - **Clips**: `trigger_clip`, `select_clip`, `get_clip_thumbnail`, `set_clip_play_direction`, `set_clip_play_mode`, `set_clip_position`, `clear_clip`, `wipe_composition`
 - **Layers**: `set_layer_opacity|bypass|blend_mode`, `list_layer_blend_modes`, `set_layer_transition_duration|blend_mode`, `list_layer_transition_blend_modes`, `clear_layer`
 - **Columns/Decks**: `trigger_column`, `select_deck`
-- **Tempo**: `get_tempo`, `set_bpm`, `tap_tempo`, `resync_tempo`
+- **Tempo**: `get_tempo`, `set_bpm`, `tap_tempo` *(marked `[BETA]` in v0.5.0 — see "Stability tiers" below)*, `resync_tempo`
 - **Effects**: `list_video_effects`, `list_layer_effects`, `set_effect_parameter`, `add_effect_to_layer`, `remove_effect_from_layer`
 - **OSC** (v0.4): `osc_send`, `osc_query`, `osc_subscribe`, `osc_status`
+
+## v0.5.0 environment flags (NEW)
+
+Three opt-in env vars introduced in v0.5.0. **Defaults reproduce v0.4.x behavior bit-for-bit.**
+
+| Variable | Default | What it enables |
+|---|---|---|
+| `RESOLUME_CACHE` | empty (off) | CompositionStore — push-driven OSC cache. `1`/`owner` binds OSC OUT exclusively. `passive`/`shared` lets other tools feed the cache. Keep **off** during normal testing unless you're explicitly verifying cache behavior. |
+| `RESOLUME_EFFECT_CACHE` | `1` (on) | Effect-id cache. Halves request rate for `setEffectParameter` calls. **Default-on**. Set to `0` to bisect drift bugs. |
+| `RESOLUME_TOOLS_STABILITY` | `beta` | Visibility filter. `stable` hides beta+alpha tools. `alpha` shows everything. The skill's tool catalog assumes default (`beta`). |
+
+### Stability tiers (NEW)
+
+Each tool now carries a `stability` marker. `tools/list` decorates descriptions:
+- `stable` — no prefix (the default)
+- `beta` — `[BETA] {description}`
+- `alpha` — `[ALPHA] {description}`
+
+Currently only `tap_tempo` is `beta`. Field validation may move it back to `stable` in a future release. If a test op requires `tap_tempo` and it's missing, check `RESOLUME_TOOLS_STABILITY` isn't set to `stable`.
+
+### Cache-coexistence trap (when `RESOLUME_CACHE=1`)
+
+When the CompositionStore is in OWNER mode, it exclusively binds the OSC OUT port. The legacy `resolume_osc_subscribe` tool will hit `EADDRINUSE` when called concurrently. v0.5.0 stops here; v0.5.1 will multiplex. **For Recipe E in v0.5.0**: leave `RESOLUME_CACHE` unset. If you need to test cache hydration explicitly, do it in a separate process from `osc_subscribe` calls.
 
 ## CRITICAL safety rules (lessons from live use)
 

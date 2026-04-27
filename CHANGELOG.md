@@ -2,16 +2,75 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] — Sprint B (v0.5.0 work in progress)
+## [0.5.0] - 2026-04-27
 
-Phase 1 + Phase 2 of v0.5 Component 3 (`docs/v0.5/03-tool-registry.md`).
+Sprint B of the v0.5 roadmap (`docs/v0.5/99-roadmap.md`). Three orthogonal feature components landed in parallel via worktree-isolated implementer agents:
+
+- **CompositionStore** (Component 1 Phases 1-3) — push-driven state cache fed by Resolume's OSC OUT (~325 msg/s), with REST seed/reconcile fallback. Library-only in v0.5.0; tools land in v0.5.1.
+- **Effect-id cache** (Component 4 Phase 1) — TTL'd cache that halves REST round-trips for `setEffectParameter` calls in BPM-synced parameter loops.
+- **Tool registry stability tiers** (Component 3 Phases 1-2) — `stable`/`beta`/`alpha` markers on every `ToolDefinition`, env-var visibility filter, deprecation lifecycle, with `tap_tempo` marked beta as the first concrete tier user.
+
+All three are **opt-in via env flags**; defaults reproduce v0.4.x behavior bit-for-bit. **No breaking API changes.**
+
+### Added — CompositionStore (`src/resolume/composition-store/`)
+
+- **`types.ts`** — typed snapshot shape (`CachedComposition`, `CachedLayer`, `CachedClip`, `CachedTempo`) with `Source` provenance tag on every field. Pure immutable records.
+- **`ttl.ts`** — per-field TTL constants (`transportPosition: 250ms`, `opacity/bypassed/solo: 5000ms`, `bpm/crossfaderPhase: 2000ms`, structural: 30000ms) plus `isFresh()` helper.
+- **`reducers.ts`** — pure functions for OSC → snapshot dispatch (`applyOpacity`, `applyTransportPosition`, `applyTempo`, `applyCrossfader`, `applyConnect`, `applySelect`, `applyBeatSnap`, `applySelectedDeck`) and full REST seed (`applyFullSeed`).
+- **`mux.ts`** — `SubscriptionMux` for pattern-based fan-out, with `subscribe(pattern, handler)` and `collect(pattern, durationMs, maxMessages)`. Reuses `osc-codec.ts` segment-bound `*` semantics.
+- **`store.ts`** — `CompositionStore` class with three operating modes negotiated at startup:
+  - **OWNER** (`RESOLUME_CACHE=1` or `=owner`) — store owns a persistent UDP socket bound to OSC OUT.
+  - **SHARED** (`RESOLUME_CACHE=passive` or `=shared`) — store does not bind; other tools feed it via `feed(msg)`.
+  - **OFF** (default — empty/`0`) — store is not constructed; v0.4 behavior preserved.
+  - On `EADDRINUSE` during OWNER bind, automatically degrades to SHARED with a stderr warning so the user's existing OSC tools keep working.
+- **Lifecycle**: `start()` runs REST seed in parallel with first-OSC-packet wait, never throws on hydration failure (logs to stderr). Background reconnect loop (5s ±20% jitter) when Resolume isn't running. `stop()` is idempotent and called from `SIGINT`/`SIGTERM`.
+- **Drift detection** — unknown layer/clip indices in OSC messages trigger a debounced (`rehydrateThrottleMs=500`) full re-seed.
+- **Diagnostics** — `stats()` returns `{ revision, hydrated, oscLive, lastOscAt, lastSeedAt, msgsReceived, rehydrationsTriggered, mode }`.
+- **Reactivity** — `onChange(listener)` fires only when `revision` actually advances (filters out no-op snapshot replacements at ~325 Hz).
+- **Test coverage**: 95.23% statements / 86.15% branches / 96.87% functions / 98.73% lines on the `composition-store/` subdir; +101 new tests.
+
+### Added — Effect-id cache (`src/resolume/effect-id-cache.ts`)
+
+- **`EffectIdCache`** — 300s default TTL, 1000-entry LRU, single-flight via `Map<key, Promise<number>>`, per-layer secondary index for O(1) layer-wide invalidation.
+- **Wiring**: `setEffectParameter` now consumes the cache (skips GET-then-PUT on hit). Invalidation hooks on `addEffectToLayer` / `removeEffectFromLayer` (per-layer flush), `wipeComposition` / `selectDeck` (clear all). `clearLayer` does NOT invalidate (clip-only operation; documented inline).
+- **Opt-out**: `RESOLUME_EFFECT_CACHE=0` restores v0.4.x GET-then-PUT pattern.
+- **Documented caveat**: cache stores id only, not param schema. Subsequent hits skip param-name validation. Drift bounded by 300s TTL.
+- **Test coverage**: 96.96% statements / 87.17% branches / 100% functions / 98.38% lines on `effect-id-cache.ts`; +28 new tests.
+
+### Added — Tool registry stability tiers + deprecation
+
+- **`ToolDefinition`** gains optional `stability?: "stable" | "beta" | "alpha"` (default `"stable"`) and `deprecated?: { since, replaceWith?, removeIn?, reason? }` fields.
+- **`registry.ts`** — `decorateDescription(tool)` adds `[BETA] `/`[ALPHA] ` prefixes and `(deprecated since X[, use Y][, removed in Z])` suffixes at registration time. Applied inside `eraseTool()`.
+- **`RESOLUME_TOOLS_STABILITY` env var** filters which tiers `tools/list` exposes:
+  - `stable` — only stable tools
+  - `beta` (default) — stable + beta
+  - `alpha` — all three
+  - Stderr line at startup logs how many tools are hidden when applicable.
+- **Deprecation runtime warning** — module-scoped set ensures once-per-process stderr warning when a deprecated tool is invoked.
+- **`tap_tempo` marked beta** — first concrete user of the tier system.
 
 ### Refactor — flip tool-index import to generated file (Phase 1)
 
-- **`src/server/registerTools.ts`** now imports `allTools` from `./tools/index.generated.js` instead of the manual `index.ts`.
-- **`src/tools/index.ts`** becomes a thin re-export over `index.generated.ts`. Adding/removing/renaming a tool is now a single-file edit (the tool source) plus `npm run gen:tools`.
-- **`scripts/check-skill-sync.mjs`** drops its bespoke `index.ts` parser and reads `tool-manifest.json` directly. Errors out with a clear `tool-manifest.json missing — run npm run gen:tools first` if the codegen was skipped.
-- **`prepublishOnly` chain** verified to run `check:tools` → `build` → `test` → `check:skill-sync` so a published artifact can never escape with stale codegen, missing manifest, failing tests, or skill-doc drift.
+- **`src/server/registerTools.ts`** now imports `allTools` from `./tools/index.generated.js`. Manual `src/tools/index.ts` is a thin re-export.
+- **`scripts/check-skill-sync.mjs`** drops its bespoke `index.ts` parser and reads `tool-manifest.json` directly.
+- **`prepublishOnly` chain** verified: `check:tools` → `build` → `test` → `check:skill-sync`.
+
+### Configuration — three new opt-in env vars
+
+| Variable | Values | Default | Effect |
+|---|---|---|---|
+| `RESOLUME_CACHE` | empty / `0` / `1` / `owner` / `passive` / `shared` | empty (off) | Enables CompositionStore. |
+| `RESOLUME_EFFECT_CACHE` | `0` / `1` / `true` / `false` | `1` | Toggles effect-id cache. Default-on. |
+| `RESOLUME_TOOLS_STABILITY` | `stable` / `beta` / `alpha` | `beta` | Visibility filter for tool tiers. |
+
+### Verified
+
+396 tests pass (was 243 baseline at v0.4.2; +153 net across all three components). Coverage: 94.37% statements / 86.75% branches / 93.20% functions / 96.94% lines.
+
+### Deferred to v0.5.1 (Sprint C)
+
+- CompositionStore Phases 4-6: `*Fast` cache-first read methods on `ResolumeClient`, new tools `resolume_cache_refresh` / `resolume_cache_status` / `resolume_get_clip_position`, `osc_subscribe` multiplexed through the store, live verification.
+- Component 4 Phase 2: sub-endpoint probe (requires live Resolume Swagger) and per-family conversion (e.g. `POST /composition/tempocontroller/resync`).
 
 ## [0.4.3] - 2026-04-27
 
