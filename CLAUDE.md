@@ -112,6 +112,18 @@ REST/WS では実装できない or 効率が悪いことを OSC で補う。
 - `resolume_osc_subscribe` は OSC OUT port を排他バインドする → 既に占有されていれば EADDRINUSE。`resolume_osc_status` で先にプローブ可。
 - 注意: `/composition/tempocontroller/tempo` への OSC 値送信は **正規化 0..1** 値。BPM の生数値を送ると min..max にスケールされて壊れる(REST と挙動が違う)。Resolume の OSC は ParamRange を 0..1 で扱う規約。
 
+## Skill maintenance
+
+このリポジトリは Claude Code 用 skill (`skills/resolume-mcp-tester/SKILL.md`) を同梱している。skill 内の「Tool catalog」と `(N tools)` カウントは、サーバが公開するツール一覧の **正本コピー** として扱う。
+
+**ルール**: ツールを 1 つ追加・削除・改名するときは、同じコミットで `src/tools/index.ts` と `skills/resolume-mcp-tester/SKILL.md` を両方更新する。skill 側の更新内容:
+
+1. 該当ドメインの bullet list にツール名を追加/削除する(短縮形 `verb_object` でよい — sync スクリプトが `resolume_` プレフィックスを補って照合する)。
+2. `(36 tools)` のような件数 callout を新しい数値に更新する。
+3. silent-no-op や white-out リスクなど、live test で発見した運用上の落とし穴があれば該当セクション(Recipe / Critical safety rules)に追記する。
+
+**強制機構**: `scripts/check-skill-sync.mjs` が `npm run check:skill-sync` および `prepublishOnly` で走る。コードと skill が乖離していれば exit 1 で publish が止まる。コミット前に手動でも `node scripts/check-skill-sync.mjs` を回しておく。新規 contributor 向けの詳細チェックリストは `CONTRIBUTING.md` を参照。
+
 ## 参考リンク
 
 - 公式 REST API ドキュメント: https://resolume.com/support/en/restapi

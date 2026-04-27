@@ -27,7 +27,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "prepublishOnly": "npm run build && npm test"
+    "check:skill-sync": "node scripts/check-skill-sync.mjs",
+    "prepublishOnly": "npm run build && npm test && npm run check:skill-sync"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",

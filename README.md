@@ -165,6 +165,26 @@ OSC complements REST/WS with a few things they can't do: wildcard reads, real-ti
 
 > "Clear layer 2." (Claude will ask for confirmation before sending `confirm: true`.)
 
+## Bundled Skill
+
+A Claude Code [skill](https://docs.claude.com/en/docs/claude-code/skills) ships in this repo at [`skills/resolume-mcp-tester/`](./skills/resolume-mcp-tester/SKILL.md). It encodes the operational knowledge accumulated across releases — smoke-test recipes, white-out prevention rules, state-restoration patterns, and agent invocation templates for verifying every tool against a live Resolume Arena.
+
+Install once into your Claude Code skill directory:
+
+```bash
+# macOS / Linux
+mkdir -p ~/.claude/skills
+cp -r skills/resolume-mcp-tester ~/.claude/skills/
+```
+
+```powershell
+# Windows (PowerShell)
+New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null
+Copy-Item -Recurse -Force skills\resolume-mcp-tester "$HOME\.claude\skills\"
+```
+
+Restart Claude Code, then ask it to "run a comprehensive smoke test of resolume-mcp-server" — it'll load the skill automatically and follow the safety rules. See [`skills/README.md`](./skills/README.md) for details and the versioning policy.
+
 ## Roadmap
 
 - ~~**v0.2** — Tempo, deck, blend mode, effects (set parameters)~~ ✅ shipped
