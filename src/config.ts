@@ -1,7 +1,10 @@
 import { z } from "zod";
 
 const HOST_PATTERN = /^[a-zA-Z0-9.:-]+$/;
-const PRIVATE_NET = /^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|::1$|localhost$|fd[0-9a-f]{2}:|fe80:)/i;
+// Loopback, RFC-1918 private, IPv6 ULA/link-local, plus Tailscale's CGNAT range
+// 100.64.0.0/10 (RFC 6598) which mesh-VPN users commonly run Resolume over.
+const PRIVATE_NET =
+  /^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.|::1$|localhost$|fd[0-9a-f]{2}:|fe80:)/i;
 const METADATA_ADDRS = new Set([
   "169.254.169.254",
   "metadata.google.internal",

@@ -34,6 +34,17 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ RESOLUME_HOST: "example.com" })).toThrow();
   });
 
+  it("accepts Tailscale CGNAT range (100.64.0.0/10)", () => {
+    expect(loadConfig({ RESOLUME_HOST: "100.74.26.128" }).host).toBe("100.74.26.128");
+    expect(loadConfig({ RESOLUME_HOST: "100.64.0.1" }).host).toBe("100.64.0.1");
+    expect(loadConfig({ RESOLUME_HOST: "100.127.255.255" }).host).toBe("100.127.255.255");
+  });
+
+  it("rejects 100.x ranges outside CGNAT", () => {
+    expect(() => loadConfig({ RESOLUME_HOST: "100.0.0.1" })).toThrow();
+    expect(() => loadConfig({ RESOLUME_HOST: "100.128.0.1" })).toThrow();
+  });
+
   it("rejects cloud metadata addresses", () => {
     expect(() => loadConfig({ RESOLUME_HOST: "169.254.169.254" })).toThrow(/metadata/);
     expect(() => loadConfig({ RESOLUME_HOST: "metadata.google.internal" })).toThrow();
