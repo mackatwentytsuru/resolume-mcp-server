@@ -1,0 +1,15 @@
+#!/bin/sh
+# post-commit: friendly nudge if SKILL.md was just touched.
+# If you added a new tool, remember to bump the resolume-mcp-tester
+# skill version in skills/resolume-mcp-tester/SKILL.md frontmatter.
+
+if git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null \
+    | grep -q "skills/resolume-mcp-tester/SKILL.md"; then
+  echo ""
+  echo "[post-commit] SKILL.md was modified."
+  echo "  Reminder: if you added/removed a tool, bump the skill version"
+  echo "  in skills/resolume-mcp-tester/SKILL.md frontmatter and update"
+  echo "  the (N tools) callouts. The pre-commit sync check verifies"
+  echo "  tool names; the version bump is on you."
+  echo ""
+fi

@@ -28,6 +28,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check:skill-sync": "node scripts/check-skill-sync.mjs",
+    "setup-hooks": "git config core.hooksPath .githooks",
+    "prepare": "node scripts/setup-hooks.mjs",
     "prepublishOnly": "npm run build && npm test && npm run check:skill-sync"
   },
   "dependencies": {

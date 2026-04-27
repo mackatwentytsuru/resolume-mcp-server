@@ -14,9 +14,28 @@ npm run build
 npm test
 ```
 
+`npm install` automatically activates the local git hooks via the `prepare`
+script (no extra step needed). If for some reason they didn't activate —
+e.g. you cloned with a tool that skipped lifecycle scripts — run
+`npm run setup-hooks` to wire `core.hooksPath` to `.githooks/` manually.
+
 Coverage is enforced at 80% across branches/functions/lines/statements via
 the vitest config. Run `npm run test:coverage` before pushing if you've
 touched anything beyond docs.
+
+## Local git hooks
+
+This repo uses native `.githooks/` scripts (no `husky`/`simple-git-hooks`
+dependency) to give immediate feedback without waiting on CI:
+
+| Hook | Runs | Cost | Bypass (last resort) |
+|------|------|------|----------------------|
+| `pre-commit` | typecheck (`npm run build`) + skill-sync drift check | ~3-5s | `git commit --no-verify` |
+| `pre-push` | typecheck + full vitest suite + skill-sync | ~10-30s | `git push --no-verify` |
+| `post-commit` | reminder if `SKILL.md` was touched | <100ms | n/a |
+
+The hooks are POSIX shell scripts, so they work on macOS/Linux directly and
+on Windows via Git Bash (which ships with Git for Windows).
 
 ## Project layout
 

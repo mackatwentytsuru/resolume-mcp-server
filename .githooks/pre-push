@@ -1,0 +1,21 @@
+#!/bin/sh
+# pre-push: full verification (< 30s) — build, full test suite, skill-sync.
+# Runs before pushing to remote, catches anything pre-commit skipped.
+#
+# Bypass with `git push --no-verify` if you absolutely need to.
+
+set -e
+
+t0=$(date +%s)
+
+echo "pre-push: typecheck (npm run build)..."
+npm run build --silent
+
+echo "pre-push: running full test suite (npm test)..."
+npm test --silent
+
+echo "pre-push: skill-sync drift check..."
+node scripts/check-skill-sync.mjs
+
+t1=$(date +%s)
+echo "pre-push: OK ($((t1 - t0))s)"

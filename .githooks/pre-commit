@@ -1,0 +1,18 @@
+#!/bin/sh
+# pre-commit: fast checks (< 5s) — typecheck + skill-sync.
+# Heavier checks (full test suite) run on pre-push instead.
+#
+# Bypass with `git commit --no-verify` if you absolutely need to.
+
+set -e
+
+t0=$(date +%s)
+
+echo "pre-commit: typecheck (npm run build)..."
+npm run build --silent
+
+echo "pre-commit: skill-sync drift check..."
+node scripts/check-skill-sync.mjs
+
+t1=$(date +%s)
+echo "pre-commit: OK ($((t1 - t0))s)"

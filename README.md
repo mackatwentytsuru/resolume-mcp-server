@@ -205,6 +205,11 @@ npm test
 npm run test:coverage  # 80%+ thresholds enforced
 ```
 
+`npm install` activates local git hooks (`pre-commit` runs typecheck +
+skill-sync drift check in ~3-5s; `pre-push` adds the full vitest suite).
+See [`CONTRIBUTING.md`](./CONTRIBUTING.md#local-git-hooks) for details and
+bypass instructions.
+
 Project layout:
 
 ```
