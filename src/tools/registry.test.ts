@@ -1,8 +1,13 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { allTools } from "./index.generated.js";
+import {
+  filterByStability,
+  parseStability,
+  type AnyTool,
+} from "./registry.js";
 
 /**
  * Phase 1 manifest integrity tests.
@@ -130,5 +135,101 @@ describe("tool registry — manifest integrity (Phase 1)", () => {
       const runtimeDestructive = Boolean(runtimeTool!.destructive);
       expect(entry.destructive).toBe(runtimeDestructive);
     }
+  });
+});
+
+/**
+ * Phase 2 — `parseStability` env coercion. Treats malformed input as
+ * `"beta"` (the default deploy posture) and writes a warning to stderr so
+ * an operator can spot a typo.
+ */
+describe("parseStability", () => {
+  it("returns 'beta' when the env var is undefined", () => {
+    expect(parseStability(undefined)).toBe("beta");
+  });
+
+  it("returns 'beta' when the env var is empty", () => {
+    expect(parseStability("")).toBe("beta");
+  });
+
+  it("accepts each canonical tier name verbatim", () => {
+    expect(parseStability("stable")).toBe("stable");
+    expect(parseStability("beta")).toBe("beta");
+    expect(parseStability("alpha")).toBe("alpha");
+  });
+
+  it("normalises mixed case and surrounding whitespace", () => {
+    expect(parseStability(" Stable ")).toBe("stable");
+    expect(parseStability("BETA")).toBe("beta");
+    expect(parseStability("Alpha\n")).toBe("alpha");
+  });
+
+  it("falls back to 'beta' and warns on stderr for unknown values", () => {
+    const writeSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    try {
+      expect(parseStability("foo")).toBe("beta");
+      expect(writeSpy).toHaveBeenCalledTimes(1);
+      const msg = String(writeSpy.mock.calls[0][0]);
+      expect(msg).toContain("RESOLUME_TOOLS_STABILITY='foo'");
+      expect(msg).toContain("'beta'");
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+});
+
+/**
+ * Phase 2 — `filterByStability` semantics. The runtime visibility filter
+ * has to be exact about which tier admits which tool because operators
+ * may rely on `RESOLUME_TOOLS_STABILITY=stable` to hide experimental
+ * surface from production sessions.
+ */
+describe("filterByStability", () => {
+  function fakeTool(name: string, stability: AnyTool["stability"]): AnyTool {
+    return {
+      name,
+      title: name,
+      description: `desc ${name}`,
+      inputSchema: {},
+      stability,
+      handler: async () => ({ content: [{ type: "text", text: "ok" }] }),
+    };
+  }
+
+  const stable = fakeTool("stable_tool", "stable");
+  const beta = fakeTool("beta_tool", "beta");
+  const alpha = fakeTool("alpha_tool", "alpha");
+  const all = [stable, beta, alpha] as const;
+
+  it("'stable' filter exposes only stable tools", () => {
+    const out = filterByStability(all, "stable");
+    expect(out.map((t) => t.name)).toEqual(["stable_tool"]);
+  });
+
+  it("'beta' filter exposes stable + beta and hides alpha", () => {
+    const out = filterByStability(all, "beta");
+    expect(out.map((t) => t.name)).toEqual(["stable_tool", "beta_tool"]);
+  });
+
+  it("'alpha' filter exposes every tier", () => {
+    const out = filterByStability(all, "alpha");
+    expect(out.map((t) => t.name)).toEqual([
+      "stable_tool",
+      "beta_tool",
+      "alpha_tool",
+    ]);
+  });
+
+  it("treats a missing stability field as 'stable'", () => {
+    // Construct an AnyTool-ish object that lacks stability to exercise the
+    // defensive ?? "stable" branch inside filterByStability.
+    const looseStable = {
+      ...stable,
+      stability: undefined as unknown as AnyTool["stability"],
+    } as AnyTool;
+    const out = filterByStability([looseStable, beta, alpha], "stable");
+    expect(out.map((t) => t.name)).toEqual(["stable_tool"]);
   });
 });

@@ -2,16 +2,38 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { ResolumeApiError } from "../errors/types.js";
 import { allTools } from "../tools/index.generated.js";
-import type { AnyTool } from "../tools/registry.js";
+import {
+  filterByStability,
+  parseStability,
+  type AnyTool,
+} from "../tools/registry.js";
 import type { ToolContext, ToolResult } from "../tools/types.js";
 
 /**
  * Register every Resolume MCP tool against the SDK server. The handler
  * wraps each call in a try/catch so that any ResolumeApiError is surfaced
  * to the LLM as a structured error result instead of crashing the server.
+ *
+ * Visibility is controlled by the `RESOLUME_TOOLS_STABILITY` env var:
+ *   - `stable` exposes only stable tools.
+ *   - `beta`   (default) exposes stable + beta.
+ *   - `alpha`  exposes everything.
+ *
+ * When tools are hidden, a single line is emitted to stderr at startup so
+ * an operator can see the effect of their setting.
  */
 export function registerTools(server: McpServer, ctx: ToolContext): void {
-  for (const tool of allTools) {
+  const minTier = parseStability(process.env.RESOLUME_TOOLS_STABILITY);
+  const filtered = filterByStability(allTools, minTier);
+  const hiddenCount = allTools.length - filtered.length;
+  if (hiddenCount > 0) {
+    process.stderr.write(
+      `resolume-mcp-server: tier filter = ${minTier} (${hiddenCount} ${
+        hiddenCount === 1 ? "tool" : "tools"
+      } hidden)\n`
+    );
+  }
+  for (const tool of filtered) {
     registerOne(server, ctx, tool);
   }
 }

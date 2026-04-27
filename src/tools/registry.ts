@@ -64,6 +64,49 @@ export function decorateDescription(
 }
 
 /**
+ * Coerce a raw env-var value into a stability tier, defaulting to `"beta"`
+ * for anything malformed or absent. Out-of-range values are reported via
+ * `process.stderr` so a misconfigured operator notices their typo.
+ */
+export function parseStability(raw: string | undefined): Stability {
+  if (raw === undefined || raw === "") return "beta";
+  const normalised = raw.toLowerCase().trim();
+  if (normalised === "stable" || normalised === "beta" || normalised === "alpha") {
+    return normalised;
+  }
+  process.stderr.write(
+    `[resolume-mcp-server] WARNING: RESOLUME_TOOLS_STABILITY='${raw}' is not one of stable|beta|alpha — defaulting to 'beta'.\n`
+  );
+  return "beta";
+}
+
+const TIER_RANK: Record<Stability, number> = {
+  stable: 0,
+  beta: 1,
+  alpha: 2,
+};
+
+/**
+ * Filter an `AnyTool` array down to tools whose stability tier is at or
+ * below the provided maximum visibility level.
+ *
+ *   `stable` → exposes only stable.
+ *   `beta`   → exposes stable + beta (default deploy posture).
+ *   `alpha`  → exposes everything.
+ *
+ * Each tool's stability defaults to `"stable"` when missing — `eraseTool()`
+ * already normalises this, but the function is defensive in case it is
+ * called against a hand-rolled `AnyTool` array.
+ */
+export function filterByStability(
+  tools: ReadonlyArray<AnyTool>,
+  maxTier: Stability
+): AnyTool[] {
+  const ceiling = TIER_RANK[maxTier];
+  return tools.filter((t) => TIER_RANK[t.stability ?? "stable"] <= ceiling);
+}
+
+/**
  * Erase the handler's specific argument type while keeping every other field
  * structurally typed. The cast is isolated to the handler — if `AnyTool` and
  * `ToolDefinition` ever drift on any other field, TypeScript will surface it
