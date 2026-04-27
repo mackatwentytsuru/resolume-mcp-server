@@ -29,12 +29,12 @@ describe("ResolumeClient.addEffectToLayer", () => {
     );
   });
 
-  it("preserves spaces in multi-word effect names", async () => {
+  it("URL-encodes multi-word effect names (space → %20)", async () => {
     const { client, rest } = buildClient();
     await client.addEffectToLayer(1, "Hue Rotate");
     expect(rest.postText).toHaveBeenCalledWith(
       "/composition/layers/1/effects/video/add",
-      "effect:///video/Hue Rotate"
+      "effect:///video/Hue%20Rotate"
     );
   });
 

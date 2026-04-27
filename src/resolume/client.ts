@@ -512,9 +512,12 @@ export class ResolumeClient {
       });
     }
     const trimmed = effectName.trim();
+    // URL-encode the effect name so names with special characters (e.g. spaces,
+    // parentheses) are transmitted correctly. Live-verified: Resolume's drag-drop
+    // URI parser accepts percent-encoded names produced by encodeURIComponent.
     await this.rest.postText(
       `/composition/layers/${layer}/effects/video/add`,
-      `effect:///video/${trimmed}`
+      `effect:///video/${encodeURIComponent(trimmed)}`
     );
   }
 
