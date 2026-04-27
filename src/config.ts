@@ -34,6 +34,14 @@ const ConfigEnvSchema = z.object({
   RESOLUME_OSC_HOST: HostSchema.default("127.0.0.1"),
   RESOLUME_OSC_IN_PORT: z.coerce.number().int().min(1024).max(65535).default(7000),
   RESOLUME_OSC_OUT_PORT: z.coerce.number().int().min(1024).max(65535).default(7001),
+  // v0.5: opt-out for the effect-id cache. Default-on is safe — the cache is
+  // correctness-preserving by construction (synchronous invalidation on
+  // add/remove/wipe/deck-switch + 300s TTL backstop). Set "0" or "false" to
+  // restore v0.4.x GET-then-PUT behavior on every setEffectParameter call.
+  RESOLUME_EFFECT_CACHE: z
+    .enum(["0", "1", "true", "false"])
+    .default("1")
+    .transform((v) => v === "1" || v === "true"),
 });
 
 export interface OscConfig {
@@ -47,6 +55,7 @@ export interface ResolumeConfig {
   port: number;
   timeoutMs: number;
   osc: OscConfig;
+  effectCacheEnabled: boolean;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ResolumeConfig {
@@ -57,6 +66,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ResolumeConfig
     RESOLUME_OSC_HOST: env.RESOLUME_OSC_HOST,
     RESOLUME_OSC_IN_PORT: env.RESOLUME_OSC_IN_PORT,
     RESOLUME_OSC_OUT_PORT: env.RESOLUME_OSC_OUT_PORT,
+    RESOLUME_EFFECT_CACHE: env.RESOLUME_EFFECT_CACHE,
   });
   return {
     host: parsed.RESOLUME_HOST,
@@ -67,5 +77,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ResolumeConfig
       inPort: parsed.RESOLUME_OSC_IN_PORT,
       outPort: parsed.RESOLUME_OSC_OUT_PORT,
     },
+    effectCacheEnabled: parsed.RESOLUME_EFFECT_CACHE,
   };
 }

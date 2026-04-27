@@ -8,6 +8,7 @@ describe("loadConfig", () => {
       port: 8080,
       timeoutMs: 10_000,
       osc: { host: "127.0.0.1", inPort: 7000, outPort: 7001 },
+      effectCacheEnabled: true,
     });
   });
 
@@ -23,6 +24,7 @@ describe("loadConfig", () => {
       port: 9090,
       timeoutMs: 5000,
       osc: { host: "127.0.0.1", inPort: 7000, outPort: 7001 },
+      effectCacheEnabled: true,
     });
   });
 
@@ -92,5 +94,32 @@ describe("loadConfig", () => {
   it("rejects extreme timeouts", () => {
     expect(() => loadConfig({ RESOLUME_TIMEOUT_MS: "10" })).toThrow();
     expect(() => loadConfig({ RESOLUME_TIMEOUT_MS: "999999999" })).toThrow();
+  });
+
+  describe("RESOLUME_EFFECT_CACHE", () => {
+    it("defaults to enabled when unset", () => {
+      expect(loadConfig({}).effectCacheEnabled).toBe(true);
+    });
+
+    it("'1' enables the cache", () => {
+      expect(loadConfig({ RESOLUME_EFFECT_CACHE: "1" }).effectCacheEnabled).toBe(true);
+    });
+
+    it("'true' enables the cache", () => {
+      expect(loadConfig({ RESOLUME_EFFECT_CACHE: "true" }).effectCacheEnabled).toBe(true);
+    });
+
+    it("'0' disables the cache", () => {
+      expect(loadConfig({ RESOLUME_EFFECT_CACHE: "0" }).effectCacheEnabled).toBe(false);
+    });
+
+    it("'false' disables the cache", () => {
+      expect(loadConfig({ RESOLUME_EFFECT_CACHE: "false" }).effectCacheEnabled).toBe(false);
+    });
+
+    it("rejects unrecognized values with a helpful error", () => {
+      expect(() => loadConfig({ RESOLUME_EFFECT_CACHE: "yes" })).toThrow();
+      expect(() => loadConfig({ RESOLUME_EFFECT_CACHE: "" })).toThrow();
+    });
   });
 });
