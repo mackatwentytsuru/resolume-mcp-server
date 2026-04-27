@@ -1,0 +1,221 @@
+{
+  "count": 36,
+  "tools": [
+    {
+      "destructive": false,
+      "file": "src/tools/effect/add-effect.ts",
+      "name": "resolume_add_effect_to_layer",
+      "symbol": "addEffectToLayerTool"
+    },
+    {
+      "destructive": true,
+      "file": "src/tools/clip/clear-clip.ts",
+      "name": "resolume_clear_clip",
+      "symbol": "clearClipTool"
+    },
+    {
+      "destructive": true,
+      "file": "src/tools/layer/clear-layer.ts",
+      "name": "resolume_clear_layer",
+      "symbol": "clearLayerTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/composition/beat-snap.ts",
+      "name": "resolume_get_beat_snap",
+      "symbol": "getBeatSnapTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/clip/get-thumbnail.ts",
+      "name": "resolume_get_clip_thumbnail",
+      "symbol": "getClipThumbnailTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/composition/get-composition.ts",
+      "name": "resolume_get_composition",
+      "symbol": "getCompositionTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/composition/crossfader.ts",
+      "name": "resolume_get_crossfader",
+      "symbol": "getCrossfaderTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/tempo/get-tempo.ts",
+      "name": "resolume_get_tempo",
+      "symbol": "getTempoTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/layer/set-blend-mode.ts",
+      "name": "resolume_list_layer_blend_modes",
+      "symbol": "listLayerBlendModesTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/effect/list-effects.ts",
+      "name": "resolume_list_layer_effects",
+      "symbol": "listLayerEffectsTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/layer/transition.ts",
+      "name": "resolume_list_layer_transition_blend_modes",
+      "symbol": "listLayerTransitionBlendModesTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/effect/list-effects.ts",
+      "name": "resolume_list_video_effects",
+      "symbol": "listVideoEffectsTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/osc/query.ts",
+      "name": "resolume_osc_query",
+      "symbol": "oscQueryTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/osc/send.ts",
+      "name": "resolume_osc_send",
+      "symbol": "oscSendTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/osc/status.ts",
+      "name": "resolume_osc_status",
+      "symbol": "oscStatusTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/osc/subscribe.ts",
+      "name": "resolume_osc_subscribe",
+      "symbol": "oscSubscribeTool"
+    },
+    {
+      "destructive": true,
+      "file": "src/tools/effect/remove-effect.ts",
+      "name": "resolume_remove_effect_from_layer",
+      "symbol": "removeEffectFromLayerTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/tempo/resync-tempo.ts",
+      "name": "resolume_resync_tempo",
+      "symbol": "resyncTempoTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/clip/select-clip.ts",
+      "name": "resolume_select_clip",
+      "symbol": "selectClipTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/deck/select-deck.ts",
+      "name": "resolume_select_deck",
+      "symbol": "selectDeckTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/composition/beat-snap.ts",
+      "name": "resolume_set_beat_snap",
+      "symbol": "setBeatSnapTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/tempo/set-bpm.ts",
+      "name": "resolume_set_bpm",
+      "symbol": "setBpmTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/clip/transport.ts",
+      "name": "resolume_set_clip_play_direction",
+      "symbol": "setClipPlayDirectionTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/clip/transport.ts",
+      "name": "resolume_set_clip_play_mode",
+      "symbol": "setClipPlayModeTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/clip/transport.ts",
+      "name": "resolume_set_clip_position",
+      "symbol": "setClipPositionTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/composition/crossfader.ts",
+      "name": "resolume_set_crossfader",
+      "symbol": "setCrossfaderTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/effect/set-effect-param.ts",
+      "name": "resolume_set_effect_parameter",
+      "symbol": "setEffectParameterTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/layer/set-blend-mode.ts",
+      "name": "resolume_set_layer_blend_mode",
+      "symbol": "setLayerBlendModeTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/layer/set-bypass.ts",
+      "name": "resolume_set_layer_bypass",
+      "symbol": "setLayerBypassTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/layer/set-opacity.ts",
+      "name": "resolume_set_layer_opacity",
+      "symbol": "setLayerOpacityTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/layer/transition.ts",
+      "name": "resolume_set_layer_transition_blend_mode",
+      "symbol": "setLayerTransitionBlendModeTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/layer/transition.ts",
+      "name": "resolume_set_layer_transition_duration",
+      "symbol": "setLayerTransitionDurationTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/tempo/tap-tempo.ts",
+      "name": "resolume_tap_tempo",
+      "symbol": "tapTempoTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/clip/trigger-clip.ts",
+      "name": "resolume_trigger_clip",
+      "symbol": "triggerClipTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/column/trigger-column.ts",
+      "name": "resolume_trigger_column",
+      "symbol": "triggerColumnTool"
+    },
+    {
+      "destructive": true,
+      "file": "src/tools/clip/clear-clip.ts",
+      "name": "resolume_wipe_composition",
+      "symbol": "wipeCompositionTool"
+    }
+  ]
+}
