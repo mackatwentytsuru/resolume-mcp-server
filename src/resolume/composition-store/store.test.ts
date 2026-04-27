@@ -314,6 +314,62 @@ describe("CompositionStore — stats()", () => {
   });
 });
 
+describe("CompositionStore — non-EADDRINUSE socket errors", () => {
+  it("logs the error to stderr but stays in OWNER mode", async () => {
+    const rest = makeRest(async () => SEED_FIXTURE);
+    const sock = createFakeSocket();
+    const stderrLines: string[] = [];
+    const store = new CompositionStore({
+      options: makeOptions(),
+      rest,
+      socketFactory: () => sock,
+      stderr: { write: (s) => stderrLines.push(s) },
+    });
+    await store.start();
+    sock.emitError(new Error("ECONNRESET"));
+    await new Promise((r) => setImmediate(r));
+    expect(store.__testInternals().effectiveMode).toBe("owner");
+    expect(stderrLines.some((l) => /socket error/i.test(l))).toBe(true);
+    await store.stop();
+  });
+});
+
+describe("CompositionStore — socket factory throws", () => {
+  it("logs the failure and stays unbound", async () => {
+    const rest = makeRest(async () => SEED_FIXTURE);
+    const stderrLines: string[] = [];
+    const store = new CompositionStore({
+      options: makeOptions(),
+      rest,
+      socketFactory: () => {
+        throw new Error("EPERM");
+      },
+      stderr: { write: (s) => stderrLines.push(s) },
+    });
+    await store.start();
+    expect(store.__testInternals().socketBound).toBe(false);
+    expect(stderrLines.some((l) => /socket create failed/i.test(l))).toBe(true);
+    await store.stop();
+  });
+});
+
+describe("CompositionStore — invalidate after stop is a no-op", () => {
+  it("does not schedule timers when stopped", async () => {
+    const rest = makeRest(async () => SEED_FIXTURE);
+    const sock = createFakeSocket();
+    const store = new CompositionStore({
+      options: makeOptions(),
+      rest,
+      socketFactory: () => sock,
+      stderr: { write: () => {} },
+    });
+    await store.start();
+    await store.stop();
+    store.invalidate("all");
+    expect(store.__testInternals().hasRehydrateTimer).toBe(false);
+  });
+});
+
 describe("CompositionStore — malformed packet drop", () => {
   it("ignores non-OSC bytes silently", async () => {
     const rest = makeRest(async () => SEED_FIXTURE);
@@ -458,6 +514,122 @@ describe("CompositionStore — freshness gates", () => {
     expect(store.isFresh("bpm", 500)).toBe(true);
     expect(store.isFresh("structural", 10_000)).toBe(true);
     await store.stop();
+  });
+});
+
+describe("CompositionStore — drift detection (debounced re-seed)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("re-seeds once after debounce when an OOB layer index is observed", async () => {
+    let seedCalls = 0;
+    const rest = makeRest(async () => {
+      seedCalls += 1;
+      return SEED_FIXTURE;
+    });
+    const sock = createFakeSocket();
+    const store = new CompositionStore({
+      options: makeOptions({ rehydrateThrottleMs: 50, hydrationTimeoutMs: 30 }),
+      rest,
+      socketFactory: () => sock,
+      stderr: { write: () => {} },
+    });
+    await store.start();
+    expect(seedCalls).toBe(1); // initial seed
+    // SEED_FIXTURE has layerCount=1; reference layer 9 to trigger drift.
+    sock.emitMessage(encodeMessage("/composition/layers/9/video/opacity", [0.5]));
+    expect(store.stats().rehydrationsTriggered).toBe(1);
+    // Multiple drift packets within debounce window — still only one refetch.
+    sock.emitMessage(encodeMessage("/composition/layers/9/bypassed", [true]));
+    sock.emitMessage(encodeMessage("/composition/layers/8/solo", [true]));
+    expect(store.stats().rehydrationsTriggered).toBe(1);
+    // Advance past debounce.
+    await vi.advanceTimersByTimeAsync(60);
+    expect(seedCalls).toBe(2);
+    await store.stop();
+  });
+
+  it("re-seeds for unknown OSC addresses (forward-compat with new Resolume features)", async () => {
+    let seedCalls = 0;
+    const rest = makeRest(async () => {
+      seedCalls += 1;
+      return SEED_FIXTURE;
+    });
+    const sock = createFakeSocket();
+    const store = new CompositionStore({
+      options: makeOptions({ rehydrateThrottleMs: 30, hydrationTimeoutMs: 30 }),
+      rest,
+      socketFactory: () => sock,
+      stderr: { write: () => {} },
+    });
+    await store.start();
+    expect(seedCalls).toBe(1);
+    sock.emitMessage(encodeMessage("/composition/something/totally-new", [1]));
+    expect(store.stats().rehydrationsTriggered).toBe(1);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(seedCalls).toBe(2);
+    await store.stop();
+  });
+});
+
+describe("CompositionStore — refresh() and invalidate()", () => {
+  it("refresh() runs REST seed and bumps revision", async () => {
+    let seedCalls = 0;
+    const rest = makeRest(async () => {
+      seedCalls += 1;
+      return SEED_FIXTURE;
+    });
+    const sock = createFakeSocket();
+    const store = new CompositionStore({
+      options: makeOptions(),
+      rest,
+      socketFactory: () => sock,
+      stderr: { write: () => {} },
+    });
+    await store.start();
+    const initialRev = store.readSnapshot().revision;
+    expect(seedCalls).toBe(1);
+    const r = await store.refresh();
+    expect(seedCalls).toBe(2);
+    expect(r.revision).toBeGreaterThan(initialRev);
+    expect(typeof r.durationMs).toBe("number");
+    expect(r.durationMs).toBeGreaterThanOrEqual(0);
+    await store.stop();
+  });
+
+  it("invalidate() schedules a debounced re-seed", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let seedCalls = 0;
+      const rest = makeRest(async () => {
+        seedCalls += 1;
+        return SEED_FIXTURE;
+      });
+      const sock = createFakeSocket();
+      const store = new CompositionStore({
+        options: makeOptions({ rehydrateThrottleMs: 30 }),
+        rest,
+        socketFactory: () => sock,
+        stderr: { write: () => {} },
+      });
+      await store.start();
+      expect(seedCalls).toBe(1);
+      store.invalidate("all");
+      expect(store.stats().rehydrationsTriggered).toBe(1);
+      // Coalesces additional invalidate calls within debounce window.
+      store.invalidate({ layer: 1 });
+      store.invalidate({ layer: 1, clip: 1 });
+      expect(store.stats().rehydrationsTriggered).toBe(1);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(seedCalls).toBe(2);
+      await store.stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
