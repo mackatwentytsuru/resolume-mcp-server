@@ -427,7 +427,12 @@ export class ResolumeClient {
         hint: "This is unexpected — try a different effect or reload the composition.",
       });
     }
-    if (!target.params || !(paramName in target.params)) {
+    // Use own-property lookup so inherited names like "__proto__" or "constructor"
+    // are not falsely accepted via the prototype chain (silent no-op on Resolume).
+    if (
+      !target.params ||
+      !Object.prototype.hasOwnProperty.call(target.params, paramName)
+    ) {
       const known = target.params ? Object.keys(target.params) : [];
       throw new ResolumeApiError({
         kind: "InvalidValue",

@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.6] - 2026-04-27
+
+Security-reviewer pass on the cumulative v0.2.x changes. CRITICAL/HIGH: none. LOW: 1 — fixed.
+
+### Fixed
+
+- **`set_effect_parameter` paramName guard** — used JS `in` operator which traverses the prototype chain. `__proto__` and `constructor` would falsely pass the existence check, then silently no-op against Resolume. Now uses `Object.prototype.hasOwnProperty.call` for an own-property check. No actual prototype pollution possible (computed property syntax is safe), but the silent no-op is removed.
+
+### Security review summary
+
+- Path injection: no attack surface (all paths use validated integer args; string args go only into JSON bodies)
+- SSRF: `RESOLUME_HOST` validated against private-net allowlist + metadata-service blocklist (covered in v0.1.x)
+- DoS via tap-tempo loop: capped at 12s, enforced pre-loop
+- Published package: `files` array correctly excludes `src/` and tests
+- npm audit: 0 vulnerabilities
+
+148 tests, ~97% coverage. **Verdict from review: APPROVED for stable release.**
+
 ## [0.2.5] - 2026-04-27
 
 A/B mixing + per-layer transitions. 5 new tools. 28 total.

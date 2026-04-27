@@ -353,6 +353,24 @@ describe("ResolumeClient.setEffectParameter", () => {
     });
   });
 
+  it("rejects __proto__ as paramName (own-property check, not 'in')", async () => {
+    const { client } = buildClient({
+      get: () => ({
+        video: { effects: [{ id: 1, params: { Scale: { valuetype: "ParamRange" } } }] },
+      }),
+    });
+    await expect(
+      client.setEffectParameter(1, 1, "__proto__", 1)
+    ).rejects.toMatchObject({
+      detail: { kind: "InvalidValue", field: "paramName" },
+    });
+    await expect(
+      client.setEffectParameter(1, 1, "constructor", 1)
+    ).rejects.toMatchObject({
+      detail: { kind: "InvalidValue", field: "paramName" },
+    });
+  });
+
   it("uses what:'effect' (not 'clip') for effect-index errors", async () => {
     const { client } = buildClient({
       get: () => ({ video: { effects: [{ id: 1, params: { X: {} } }] } }),
