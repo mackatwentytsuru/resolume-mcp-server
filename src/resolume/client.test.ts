@@ -120,11 +120,11 @@ describe("ResolumeClient.getProductInfo", () => {
 });
 
 describe("ResolumeClient.getClipThumbnail", () => {
-  it("appends a cache-busting timestamp", async () => {
+  it("appends a cache-busting timestamp as a query parameter", async () => {
     const { client, rest } = buildClient();
     await client.getClipThumbnail(1, 2);
     const call = (rest.getBinary as unknown as { mock: { calls: string[][] } }).mock.calls[0][0];
-    expect(call).toMatch(/^\/composition\/layers\/1\/clips\/2\/thumbnail\/\d+$/);
+    expect(call).toMatch(/^\/composition\/layers\/1\/clips\/2\/thumbnail\?t=\d+$/);
   });
 });
 

@@ -122,7 +122,18 @@ export class ResolumeClient {
         kind: "InvalidValue",
         field: "blendMode",
         value: blendMode,
-        hint: "blendMode must be a non-empty string. Use resolume_get_layer_blend_modes to list options.",
+        hint: "blendMode must be a non-empty string. Use resolume_list_layer_blend_modes to enumerate options.",
+      });
+    }
+    // Resolume silently no-ops if you PUT an unknown blend mode name. Validate
+    // against the layer's available options first so the LLM gets a useful error.
+    const available = await this.getLayerBlendModes(layer);
+    if (available.length > 0 && !available.includes(blendMode)) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "blendMode",
+        value: blendMode,
+        hint: `Unknown blend mode "${blendMode}". Available: ${available.slice(0, 10).join(", ")}${available.length > 10 ? `, ... (${available.length} total)` : ""}.`,
       });
     }
     await this.rest.put(`/composition/layers/${layer}`, {
@@ -215,6 +226,10 @@ export class ResolumeClient {
    * Set a parameter on an existing effect attached to a layer.
    * `effectIndex` is 1-based across `layer.video.effects`.
    * `paramName` is the human-readable parameter name (e.g. "Scale", "Position X").
+   *
+   * Resolume's nested-PUT requires the target effect's `id` to identify which
+   * entry in the array to mutate; without it, Resolume silently no-ops.
+   * We fetch the layer, locate the effect by 1-based index, and include the id.
    */
   async setEffectParameter(
     layer: number,
@@ -226,7 +241,7 @@ export class ResolumeClient {
     if (!Number.isInteger(effectIndex) || effectIndex < 1) {
       throw new ResolumeApiError({
         kind: "InvalidIndex",
-        what: "clip", // closest existing kind; effect index isn't its own kind yet
+        what: "clip",
         index: effectIndex,
         hint: "effectIndex is the 1-based position of the effect on the layer. Call resolume_list_layer_effects to enumerate.",
       });
@@ -239,12 +254,46 @@ export class ResolumeClient {
         hint: "paramName must match the effect's parameter name exactly (e.g. 'Scale').",
       });
     }
-    // Build the nested PUT body. We need to pad the effects array up to effectIndex.
-    const effects: Array<Record<string, unknown>> = [];
-    for (let i = 0; i < effectIndex - 1; i += 1) effects.push({});
-    effects.push({ params: { [paramName]: { value } } });
+
+    const rawLayer = (await this.rest.get(`/composition/layers/${layer}`)) as {
+      video?: {
+        effects?: Array<{ id?: number; params?: Record<string, unknown> }>;
+      };
+    };
+    const effects = rawLayer?.video?.effects ?? [];
+    const target = effects[effectIndex - 1];
+    if (!target) {
+      throw new ResolumeApiError({
+        kind: "InvalidIndex",
+        what: "clip",
+        index: effectIndex,
+        hint: `Layer ${layer} has only ${effects.length} effect(s). Call resolume_list_layer_effects.`,
+      });
+    }
+    if (typeof target.id !== "number") {
+      throw new ResolumeApiError({
+        kind: "Unknown",
+        message: `Effect at index ${effectIndex} on layer ${layer} has no id.`,
+        hint: "This is unexpected — try a different effect or reload the composition.",
+      });
+    }
+    if (!target.params || !(paramName in target.params)) {
+      const known = target.params ? Object.keys(target.params) : [];
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "paramName",
+        value: paramName,
+        hint: `Effect has no parameter named "${paramName}". Available: ${known.join(", ") || "(none)"}.`,
+      });
+    }
+
+    // Build the nested PUT body. Pad with empty objects up to effectIndex,
+    // then include the target effect's id and the param to set.
+    const body: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < effectIndex - 1; i += 1) body.push({});
+    body.push({ id: target.id, params: { [paramName]: { value } } });
     await this.rest.put(`/composition/layers/${layer}`, {
-      video: { effects },
+      video: { effects: body },
     });
   }
 
@@ -257,8 +306,10 @@ export class ResolumeClient {
   ): Promise<{ base64: string; mediaType: string }> {
     assertIndex("layer", layer);
     assertIndex("clip", clip);
+    // Resolume serves thumbnails at .../thumbnail and uses content negotiation;
+    // the cache-buster is a query string, not a path segment, so it doesn't 404.
     return this.rest.getBinary(
-      `/composition/layers/${layer}/clips/${clip}/thumbnail/${cacheBuster()}`
+      `/composition/layers/${layer}/clips/${clip}/thumbnail?t=${cacheBuster()}`
     );
   }
 }

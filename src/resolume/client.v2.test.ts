@@ -60,7 +60,15 @@ describe("ResolumeClient.setLayerBypass", () => {
 
 describe("ResolumeClient.setLayerBlendMode", () => {
   it("PUTs nested mixer body with the exact 'Blend Mode' key (capital B, M)", async () => {
-    const { client, rest } = buildClient();
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          mixer: {
+            "Blend Mode": { options: ["Add", "Multiply", "Screen"] },
+          },
+        },
+      }),
+    });
     await client.setLayerBlendMode(1, "Multiply");
     expect(rest.put).toHaveBeenCalledWith("/composition/layers/1", {
       video: { mixer: { "Blend Mode": { value: "Multiply" } } },
@@ -72,6 +80,29 @@ describe("ResolumeClient.setLayerBlendMode", () => {
     await expect(client.setLayerBlendMode(1, "")).rejects.toMatchObject({
       detail: { kind: "InvalidValue" },
     });
+  });
+
+  it("rejects unknown blend mode and includes available list in the hint", async () => {
+    const { client } = buildClient({
+      get: () => ({
+        video: {
+          mixer: {
+            "Blend Mode": { options: ["Add", "Multiply", "Screen"] },
+          },
+        },
+      }),
+    });
+    await expect(client.setLayerBlendMode(1, "Bogus")).rejects.toMatchObject({
+      detail: { kind: "InvalidValue", field: "blendMode" },
+    });
+  });
+
+  it("falls through (no validation) when the layer doesn't expose options", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({}),
+    });
+    await client.setLayerBlendMode(1, "Anything");
+    expect(rest.put).toHaveBeenCalled();
   });
 });
 
@@ -206,17 +237,26 @@ describe("ResolumeClient.listLayerEffects", () => {
 });
 
 describe("ResolumeClient.setEffectParameter", () => {
-  it("builds a padded effects array up to effectIndex and sets the named param", async () => {
-    const { client, rest } = buildClient();
+  it("includes the target effect's id in the PUT body so Resolume actually applies the change", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [
+            { id: 100, params: { Scale: { value: 1 } } },
+            { id: 200, params: { Scale: { value: 2 } } },
+          ],
+        },
+      }),
+    });
     await client.setEffectParameter(1, 2, "Scale", 50);
     expect(rest.put).toHaveBeenCalledWith("/composition/layers/1", {
       video: {
-        effects: [{}, { params: { Scale: { value: 50 } } }],
+        effects: [{}, { id: 200, params: { Scale: { value: 50 } } }],
       },
     });
   });
 
-  it("rejects invalid effectIndex", async () => {
+  it("rejects invalid effectIndex (<1)", async () => {
     const { client } = buildClient();
     await expect(client.setEffectParameter(1, 0, "Scale", 1)).rejects.toBeInstanceOf(
       ResolumeApiError
@@ -226,6 +266,30 @@ describe("ResolumeClient.setEffectParameter", () => {
   it("rejects empty paramName", async () => {
     const { client } = buildClient();
     await expect(client.setEffectParameter(1, 1, "", 1)).rejects.toMatchObject({
+      detail: { kind: "InvalidValue", field: "paramName" },
+    });
+  });
+
+  it("rejects effectIndex past the actual count with a helpful hint", async () => {
+    const { client } = buildClient({
+      get: () => ({ video: { effects: [{ id: 1, params: { X: {} } }] } }),
+    });
+    await expect(client.setEffectParameter(1, 5, "X", 1)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex" },
+    });
+  });
+
+  it("rejects unknown paramName with the list of available params", async () => {
+    const { client } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Scale: {}, "Position X": {} } }],
+        },
+      }),
+    });
+    await expect(
+      client.setEffectParameter(1, 1, "Bogus", 1)
+    ).rejects.toMatchObject({
       detail: { kind: "InvalidValue", field: "paramName" },
     });
   });
