@@ -11,6 +11,7 @@ import * as composition from "./composition.js";
 import * as effects from "./effects.js";
 import * as layer from "./layer.js";
 import * as tempo from "./tempo.js";
+import { EffectIdCache, type EffectIdCacheOptions } from "./effect-id-cache.js";
 
 export { summarizeComposition } from "./composition.js";
 
@@ -40,14 +41,34 @@ export { summarizeComposition } from "./composition.js";
  *   POST /composition/.../<action>  for action triggers (connect, select, clear)
  */
 export class ResolumeClient {
-  constructor(private readonly rest: ResolumeRestClient) {}
+  /**
+   * Per-client effect-id cache. Halves request rate for `setEffectParameter`
+   * by caching the result of the GET-then-PUT id resolution. Invalidated
+   * synchronously by `addEffectToLayer`, `removeEffectFromLayer`,
+   * `wipeComposition`, and `selectDeck`.
+   */
+  private readonly effectIdCache: EffectIdCache;
 
-  static fromConfig(config: { host: string; port: number; timeoutMs: number }): ResolumeClient {
+  constructor(
+    private readonly rest: ResolumeRestClient,
+    cacheOptions: EffectIdCacheOptions = {}
+  ) {
+    this.effectIdCache = new EffectIdCache(cacheOptions);
+  }
+
+  static fromConfig(config: {
+    host: string;
+    port: number;
+    timeoutMs: number;
+    effectCacheEnabled?: boolean;
+  }): ResolumeClient {
     const rest = new ResolumeRestClient({
       baseUrl: `http://${config.host}:${config.port}`,
       timeoutMs: config.timeoutMs,
     });
-    return new ResolumeClient(rest);
+    return new ResolumeClient(rest, {
+      enabled: config.effectCacheEnabled ?? true,
+    });
   }
 
   // ---- Composition reads ----
@@ -84,7 +105,7 @@ export class ResolumeClient {
     return composition.triggerColumn(this.rest, column);
   }
   async selectDeck(deck: number): Promise<void> {
-    return composition.selectDeck(this.rest, deck);
+    return composition.selectDeck(this.rest, deck, this.effectIdCache);
   }
 
   // ---- Clip ----
@@ -99,7 +120,7 @@ export class ResolumeClient {
     return clip.clearClip(this.rest, l, c);
   }
   async wipeComposition(): Promise<{ layers: number; slotsCleared: number }> {
-    return clip.wipeComposition(this.rest);
+    return clip.wipeComposition(this.rest, this.effectIdCache);
   }
   async setClipPlayDirection(
     l: number,
@@ -178,12 +199,19 @@ export class ResolumeClient {
     paramName: string,
     value: number | string | boolean
   ): Promise<void> {
-    return effects.setEffectParameter(this.rest, l, effectIndex, paramName, value);
+    return effects.setEffectParameter(
+      this.rest,
+      l,
+      effectIndex,
+      paramName,
+      value,
+      this.effectIdCache
+    );
   }
   async addEffectToLayer(l: number, effectName: string): Promise<void> {
-    return effects.addEffectToLayer(this.rest, l, effectName);
+    return effects.addEffectToLayer(this.rest, l, effectName, this.effectIdCache);
   }
   async removeEffectFromLayer(l: number, effectIndex: number): Promise<void> {
-    return effects.removeEffectFromLayer(this.rest, l, effectIndex);
+    return effects.removeEffectFromLayer(this.rest, l, effectIndex, this.effectIdCache);
   }
 }

@@ -26,6 +26,7 @@ import {
   extractValue,
   filterStringOptions,
 } from "./shared.js";
+import type { EffectIdCache } from "./effect-id-cache.js";
 
 // ---- Reads ----
 
@@ -171,7 +172,15 @@ export async function triggerColumn(rest: ResolumeRestClient, column: number): P
 }
 
 /** Switches the active deck. Decks act as scene/song banks. */
-export async function selectDeck(rest: ResolumeRestClient, deck: number): Promise<void> {
+export async function selectDeck(
+  rest: ResolumeRestClient,
+  deck: number,
+  cache?: EffectIdCache
+): Promise<void> {
   assertIndex("deck", deck);
   await rest.post(`/composition/decks/${deck}/select`);
+  // Switching decks reloads the layer set — every cached effect id is now
+  // potentially attached to a different effect (or no effect at all).
+  // Drop everything.
+  cache?.clearAll();
 }
