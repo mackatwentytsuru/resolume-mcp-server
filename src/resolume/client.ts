@@ -10,13 +10,7 @@ import {
 } from "./types.js";
 import { ResolumeApiError } from "../errors/types.js";
 import { assertIndex, extractName, extractValue } from "./shared.js";
-import {
-  listVideoEffects,
-  listLayerEffects,
-  setEffectParameter,
-  addEffectToLayer,
-  removeEffectFromLayer,
-} from "./effects.js";
+import * as effects from "./effects.js";
 
 /**
  * High-level facade over the Resolume REST API. This is the surface tools
@@ -330,23 +324,23 @@ export class ResolumeClient {
 
   /** Resolume full video effect catalog. Implemented in effects.ts. */
   async listVideoEffects(): Promise<EffectCatalogEntry[]> {
-    return listVideoEffects(this.rest);
+    return effects.listVideoEffects(this.rest);
   }
 
-  async listLayerEffects(layer: number): Promise<Awaited<ReturnType<typeof listLayerEffects>>> {
-    return listLayerEffects(this.rest, layer);
+  async listLayerEffects(layer: number): Promise<Awaited<ReturnType<typeof effects.listLayerEffects>>> {
+    return effects.listLayerEffects(this.rest, layer);
   }
 
   async setEffectParameter(layer: number, effectIndex: number, paramName: string, value: number | string | boolean): Promise<void> {
-    return setEffectParameter(this.rest, layer, effectIndex, paramName, value);
+    return effects.setEffectParameter(this.rest, layer, effectIndex, paramName, value);
   }
 
   async addEffectToLayer(layer: number, effectName: string): Promise<void> {
-    return addEffectToLayer(this.rest, layer, effectName);
+    return effects.addEffectToLayer(this.rest, layer, effectName);
   }
 
   async removeEffectFromLayer(layer: number, effectIndex: number): Promise<void> {
-    return removeEffectFromLayer(this.rest, layer, effectIndex);
+    return effects.removeEffectFromLayer(this.rest, layer, effectIndex);
   }
   // ---- Composition-level beat snap / trigger style ----
 
