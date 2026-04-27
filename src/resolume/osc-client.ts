@@ -109,7 +109,7 @@ export async function queryOsc(
       if (settled) return;
       settled = true;
       try { sock.close(); } catch { /* ignore */ }
-      resolve(collected.filter((m) => matchOscPattern(address, m.address)));
+      resolve(collected);
     };
     const timer = setTimeout(finish, Math.max(50, timeoutMs));
     sock.on("error", (err) => {
@@ -123,6 +123,8 @@ export async function queryOsc(
       const ts = Date.now();
       try {
         for (const m of decodePacket(msg)) {
+          // Filter at receive time so non-matching messages are never buffered.
+          if (!matchOscPattern(address, m.address)) continue;
           collected.push({ ...m, timestamp: ts });
         }
       } catch {
@@ -230,7 +232,16 @@ export async function probeOscStatus(
         try { sock.close(); } catch { /* ignore */ }
         resolve({ reachable: false, lastReceived: null });
       });
-      sock.on("message", () => {
+      sock.on("message", (msg) => {
+        // Only treat the port as reachable if at least one valid OscMessage
+        // can be decoded — non-OSC UDP traffic (stray packets) should not
+        // falsely mark Resolume as present.
+        try {
+          const messages = decodePacket(msg);
+          if (messages.length === 0) return;
+        } catch {
+          return;
+        }
         lastReceived = Date.now();
         clearTimeout(timer);
         finish();

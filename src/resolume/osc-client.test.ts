@@ -156,7 +156,23 @@ describe("queryOsc", () => {
     const p = queryOsc("127.0.0.1", 7000, 7001, "/x", 200, () => sock);
     await expect(p).rejects.toThrow(/ENETUNREACH/);
   });
-});
+  it("filters non-matching messages at receive time (buffer never holds non-matching)", async () => {
+    const sock = createFakeSocket();
+    const p = queryOsc("127.0.0.1", 7000, 7001, "/match/*", 200, () => sock);
+    await new Promise((r) => setImmediate(r));
+    // Send 95 non-matching + 5 matching messages
+    for (let i = 0; i < 95; i++) {
+      sock.emitMessage(encodeMessage("/other/path", [i]));
+    }
+    for (let i = 0; i < 5; i++) {
+      sock.emitMessage(encodeMessage("/match/" + i, [i]));
+    }
+    const result = await p;
+    // Only the 5 matching messages should appear.
+    expect(result).toHaveLength(5);
+    expect(result.every((m) => m.address.startsWith("/match/"))).toBe(true);
+  
+});});
 
 describe("subscribeOsc", () => {
   it("collects messages matching the pattern and stops at maxMessages", async () => {
@@ -229,4 +245,14 @@ describe("probeOscStatus", () => {
     const status = await p;
     expect(status.reachable).toBe(false);
   });
-});
+  it("reports reachable=false when only non-OSC UDP traffic arrives", async () => {
+    const sock = createFakeSocket();
+    const p = probeOscStatus(7001, 60, () => sock);
+    await new Promise((r) => setImmediate(r));
+    // Random bytes that are not a valid OSC packet.
+    sock.emitMessage(Buffer.from([0xde, 0xad, 0xbe, 0xef]));
+    const status = await p;
+    expect(status.reachable).toBe(false);
+    expect(status.lastReceived).toBeNull();
+  
+});});
