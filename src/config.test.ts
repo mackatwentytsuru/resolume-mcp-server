@@ -29,11 +29,11 @@ describe("loadConfig", () => {
   it("respects OSC environment overrides", () => {
     expect(
       loadConfig({
-        RESOLUME_OSC_HOST: "100.74.26.128",
+        RESOLUME_OSC_HOST: "100.64.0.1",
         RESOLUME_OSC_IN_PORT: "7100",
         RESOLUME_OSC_OUT_PORT: "7101",
       }).osc
-    ).toEqual({ host: "100.74.26.128", inPort: 7100, outPort: 7101 });
+    ).toEqual({ host: "100.64.0.1", inPort: 7100, outPort: 7101 });
   });
 
   it("rejects public OSC host to prevent SSRF", () => {
@@ -56,7 +56,7 @@ describe("loadConfig", () => {
   });
 
   it("accepts Tailscale CGNAT range (100.64.0.0/10)", () => {
-    expect(loadConfig({ RESOLUME_HOST: "100.74.26.128" }).host).toBe("100.74.26.128");
+    expect(loadConfig({ RESOLUME_HOST: "100.64.0.1" }).host).toBe("100.64.0.1");
     expect(loadConfig({ RESOLUME_HOST: "100.64.0.1" }).host).toBe("100.64.0.1");
     expect(loadConfig({ RESOLUME_HOST: "100.127.255.255" }).host).toBe("100.127.255.255");
   });

@@ -5,7 +5,7 @@
 import { ResolumeClient } from "../build/resolume/client.js";
 import { ResolumeRestClient } from "../build/resolume/rest.js";
 
-const HOST = process.env.RESOLUME_HOST ?? "100.74.26.128";
+const HOST = process.env.RESOLUME_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.RESOLUME_PORT ?? 8080);
 const LAYER = 2;
 const EFFECT = "Blur";

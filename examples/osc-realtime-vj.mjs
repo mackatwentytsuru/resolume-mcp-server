@@ -29,7 +29,7 @@
 //
 // Usage:
 //   node examples/osc-realtime-vj.mjs
-//   node examples/osc-realtime-vj.mjs http://100.74.26.128:8080 100.74.26.128 7000 7001
+//   node examples/osc-realtime-vj.mjs http://127.0.0.1:8080 127.0.0.1 7000 7001
 //
 // Requirements: Resolume Arena/Avenue running, Web Server on, OSC Input/Output
 // enabled, an audio (or video) clip playing on Layer 1, a connectable visual
@@ -58,8 +58,8 @@ const { encodeMessage, decodePacket, matchOscPattern } = codec;
 
 // ─────────────────────── config ───────────────────────
 
-const REST_BASE = process.argv[2] || 'http://100.74.26.128:8080';
-const OSC_HOST = process.argv[3] || '100.74.26.128';
+const REST_BASE = process.argv[2] || 'http://127.0.0.1:8080';
+const OSC_HOST = process.argv[3] || '127.0.0.1';
 const OSC_IN_PORT = Number(process.argv[4] || 7000);
 const OSC_OUT_PORT = Number(process.argv[5] || 7001);
 

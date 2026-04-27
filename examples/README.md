@@ -6,7 +6,7 @@ These scripts intentionally use only Node built-ins (`dgram`, `node:buffer`, `fe
 
 ## Prerequisites
 
-1. **Resolume Arena/Avenue running** at the host/port you'll pass to the script (default `100.74.26.128:8080`; common local default is `127.0.0.1:8080`).
+1. **Resolume Arena/Avenue running** at the host/port you'll pass to the script (default `127.0.0.1:8080`; common local default is `127.0.0.1:8080`).
 2. **Web Server enabled** — `Preferences > Web Server > Enable Webserver & REST API`.
 3. **OSC enabled** — `Preferences > OSC > OSC Input` *and* `OSC Output` both ticked. The script listens on Resolume's OSC OUT port (default 7001) for the playhead push and sends to OSC IN (7000).
 4. **Project built** — these scripts import from `build/resolume/osc-codec.js`. Run `npm run build` once.
@@ -28,7 +28,7 @@ Treats Layer 1's audio playhead (broadcast over OSC at ~30..60 Hz on `/compositi
 #### Run it
 
 ```bash
-# Default: hits 100.74.26.128 (the maintainer's tailnet)
+# Default: hits 127.0.0.1 (override via positional args or RESOLUME_REST env)
 node examples/osc-realtime-vj.mjs
 
 # Or with explicit endpoints (REST base, OSC host, OSC IN, OSC OUT)

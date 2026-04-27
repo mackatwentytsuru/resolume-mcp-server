@@ -6,7 +6,7 @@
 //   - One effect at a time
 //   - Restore baseline on exit
 
-const REST = "http://100.74.26.128:8080/api/v1";
+const REST = process.env.RESOLUME_REST ?? "http://127.0.0.1:8080/api/v1";
 const LAYER = 2;
 
 // Effect catalog — each entry: name, params to modulate, value generators (return safe values)

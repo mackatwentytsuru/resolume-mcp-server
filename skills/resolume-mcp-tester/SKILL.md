@@ -202,7 +202,7 @@ These have been definitively verified across REST/WS/OSC by 3 separate investiga
 ### Template 1: Comprehensive tool verification
 
 ```
-"Run a comprehensive smoke test of every tool in resolume-mcp-server against the live Resolume at 100.74.26.128:8080.
+"Run a comprehensive smoke test of every tool in resolume-mcp-server against the live Resolume at 127.0.0.1:8080.
 
 Use the resolume-mcp-tester skill for safety rules and recipes. For each of the 36 tools:
 1. Snapshot the parameter/state before mutation
@@ -249,7 +249,7 @@ Cycle through 8-10 effects: HueRotate, Posterize, PixelBlur, Mirror, Kaleidoscop
 cd ~/Projects/resolume-mcp-server && npm run build && npm test
 
 # Live REST probe (Resolume must be running)
-curl -s http://100.74.26.128:8080/api/v1/composition | jq '.tempocontroller.tempo.value'
+curl -s http://127.0.0.1:8080/api/v1/composition | jq '.tempocontroller.tempo.value'
 
 # Live OSC probe (port 7000 should be bound by Arena.exe)
 netstat -ano | findstr ":7000 :7001"

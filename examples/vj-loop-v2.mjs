@@ -3,7 +3,7 @@
 // Per skill Rule 2.5: max 1 effect swap per 32 beats (~14s) — we space ours at ~20s avg.
 // Stack cap: 3 effects total (Transform + 2 added).
 
-const REST = "http://100.74.26.128:8080/api/v1";
+const REST = process.env.RESOLUME_REST ?? "http://127.0.0.1:8080/api/v1";
 const LAYER = 2;
 const TICK_MS = 5000;
 const MAX_STACK = 3;

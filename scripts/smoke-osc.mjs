@@ -11,8 +11,8 @@ import dgram from 'node:dgram'
 import { Buffer } from 'node:buffer'
 import { setTimeout as delay } from 'node:timers/promises'
 
-const REST_BASE = process.argv[2] || 'http://100.74.26.128:8080'
-const OSC_HOST = process.argv[3] || '100.74.26.128'
+const REST_BASE = process.argv[2] || 'http://127.0.0.1:8080'
+const OSC_HOST = process.argv[3] || '127.0.0.1'
 const OSC_IN = Number(process.argv[4] || 7000)
 const OSC_OUT = Number(process.argv[5] || 7001)
 

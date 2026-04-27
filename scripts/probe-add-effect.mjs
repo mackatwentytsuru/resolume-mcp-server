@@ -2,11 +2,11 @@
 // Adds ONE effect to layer 2, verifies via GET, then removes it. Reversible.
 //
 // Usage: node scripts/probe-add-effect.mjs
-//   RESOLUME_HOST=100.74.26.128 RESOLUME_PORT=8080 by default.
+//   RESOLUME_HOST=127.0.0.1 RESOLUME_PORT=8080 by default.
 
 import WebSocket from "ws";
 
-const HOST = process.env.RESOLUME_HOST ?? "100.74.26.128";
+const HOST = process.env.RESOLUME_HOST ?? "127.0.0.1";
 const PORT = Number(process.env.RESOLUME_PORT ?? 8080);
 const HTTP_BASE = `http://${HOST}:${PORT}/api/v1`;
 const WS_URL = `ws://${HOST}:${PORT}/api/v1`;
