@@ -6,6 +6,7 @@
 import { ResolumeRestClient } from "./rest.js";
 import type { EffectCatalogEntry } from "./types.js";
 import { ResolumeApiError } from "../errors/types.js";
+import { assertIndex } from "./shared.js";
 
 // Module-level parameter type Sets (avoid per-call allocation in coerceParamValue).
 export const NUMERIC_TYPES = new Set(["ParamRange", "ParamNumber", "ParamFloat", "ParamInt"]);
@@ -54,18 +55,6 @@ export function coerceParamValue(
   // Unknown type — pass through unchanged.
   return value;
 }
-
-function assertIndex(what: "layer" | "column" | "clip" | "deck", n: number): void {
-  if (!Number.isInteger(n) || n < 1) {
-    throw new ResolumeApiError({
-      kind: "InvalidIndex",
-      what,
-      index: n,
-      hint: `${what} indices are 1-based positive integers. Call resolume_get_composition to list valid ranges.`,
-    });
-  }
-}
-
 
 /** Resolume's full video effect catalog (~100 entries). */
 export async function listVideoEffects(rest: ResolumeRestClient): Promise<EffectCatalogEntry[]> {

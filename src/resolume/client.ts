@@ -9,6 +9,7 @@ import {
   type EffectCatalogEntry,
 } from "./types.js";
 import { ResolumeApiError } from "../errors/types.js";
+import { assertIndex, extractName, extractValue } from "./shared.js";
 import {
   listVideoEffects,
   listLayerEffects,
@@ -481,17 +482,6 @@ export class ResolumeClient {
   }
 }
 
-function assertIndex(what: "layer" | "column" | "clip" | "deck", n: number): void {
-  if (!Number.isInteger(n) || n < 1) {
-    throw new ResolumeApiError({
-      kind: "InvalidIndex",
-      what,
-      index: n,
-      hint: `${what} indices are 1-based positive integers. Call resolume_get_composition to list valid ranges.`,
-    });
-  }
-}
-
 export function summarizeComposition(
   composition: Composition,
   product: ProductInfo | null
@@ -535,14 +525,4 @@ export function summarizeComposition(
       selected: extractValue(deck.selected) === true,
     })),
   };
-}
-
-function extractName(p: { value?: unknown } | undefined): string | null {
-  if (!p) return null;
-  const v = p.value;
-  return typeof v === "string" && v.length > 0 ? v : null;
-}
-
-function extractValue(p: { value?: unknown } | undefined): unknown {
-  return p?.value;
 }
