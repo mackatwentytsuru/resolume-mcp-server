@@ -16,6 +16,7 @@ import {
   setClipPlayModeTool,
   setClipPositionTool,
 } from "./clip/transport.js";
+import { clearClipTool, wipeCompositionTool } from "./clip/clear-clip.js";
 import { triggerClipTool } from "./clip/trigger-clip.js";
 import { selectClipTool } from "./clip/select-clip.js";
 import { getClipThumbnailTool } from "./clip/get-thumbnail.js";
@@ -85,6 +86,8 @@ export const allTools: ReadonlyArray<AnyTool> = [
   eraseTool(setClipPlayDirectionTool),
   eraseTool(setClipPlayModeTool),
   eraseTool(setClipPositionTool),
+  eraseTool(clearClipTool),
+  eraseTool(wipeCompositionTool),
   // Layer operations
   eraseTool(setLayerOpacityTool),
   eraseTool(setLayerBypassTool),

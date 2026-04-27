@@ -99,6 +99,40 @@ export class ResolumeClient {
     await this.rest.post(`/composition/layers/${layer}/clear`);
   }
 
+  /**
+   * Empties a single clip slot — removes the loaded media so the slot is blank.
+   * This is more destructive than clearLayer (which only disconnects what's
+   * playing); after clearClip the slot has no source, no name, no thumbnail.
+   */
+  async clearClip(layer: number, clip: number): Promise<void> {
+    assertIndex("layer", layer);
+    assertIndex("clip", clip);
+    await this.rest.post(`/composition/layers/${layer}/clips/${clip}/clear`);
+  }
+
+  /**
+   * Empties every clip slot on every layer of the active composition. Returns
+   * the number of slots actually cleared.
+   *
+   * This is the "wipe everything" button — useful when starting from a fresh
+   * state, e.g. before loading a new deck or building a show from scratch.
+   */
+  async wipeComposition(): Promise<{ layers: number; slotsCleared: number }> {
+    const composition = await this.getComposition();
+    const layers = composition.layers ?? [];
+    let cleared = 0;
+    for (let li = 0; li < layers.length; li += 1) {
+      const clips = layers[li].clips ?? [];
+      for (let ci = 0; ci < clips.length; ci += 1) {
+        await this.rest.post(
+          `/composition/layers/${li + 1}/clips/${ci + 1}/clear`
+        );
+        cleared += 1;
+      }
+    }
+    return { layers: layers.length, slotsCleared: cleared };
+  }
+
   // ---- Layer parameters (nested PUT) ----
 
   /** Master opacity in 0..1. */

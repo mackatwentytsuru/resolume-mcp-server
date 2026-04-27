@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.7] - 2026-04-27
+
+Discovered while a user wanted to wipe a deck — `clear_layer` only disconnects, it doesn't empty the clip slots themselves. Added the missing tools.
+
+### Added (2 new tools, 30 total)
+
+- **`resolume_clear_clip`** — empties a single clip slot (removes the loaded media; the slot becomes blank). Different from `clear_layer` (disconnect only). Endpoint discovered: `POST /composition/layers/{n}/clips/{n}/clear`. Destructive — requires `confirm: true`.
+- **`resolume_wipe_composition`** — empties every clip slot on every layer in one call. Useful for starting from a fresh state. Returns `{ layers, slotsCleared }`. Destructive — requires `confirm: true`.
+
+Also adds `ResolumeClient.clearClip` and `ResolumeClient.wipeComposition` for direct programmatic use.
+
+### Verified live
+
+Cleared all 27 cells of the user's Footage Shop deck (3 layers × 9 columns) — every clip name returned `<empty>` afterwards.
+
 ## [0.2.6] - 2026-04-27
 
 Security-reviewer pass on the cumulative v0.2.x changes. CRITICAL/HIGH: none. LOW: 1 — fixed.

@@ -31,6 +31,8 @@ function buildCtx(overrides: Partial<ResolumeClient> = {}) {
     setClipPlayDirection: vi.fn(async () => undefined),
     setClipPlayMode: vi.fn(async () => undefined),
     setClipPosition: vi.fn(async () => undefined),
+    clearClip: vi.fn(async () => undefined),
+    wipeComposition: vi.fn(async () => ({ layers: 3, slotsCleared: 27 })),
     getBeatSnap: vi.fn(async () => ({ value: "1 Bar", options: ["None", "1 Bar", "1/2 Bar"] })),
     setBeatSnap: vi.fn(async () => undefined),
     ...overrides,
@@ -245,6 +247,52 @@ describe("resolume_set_clip_play_mode", () => {
       ctx
     );
     expect(client.setClipPlayMode).toHaveBeenCalledWith(1, 2, "Bounce");
+  });
+});
+
+describe("resolume_clear_clip", () => {
+  it("refuses without confirm=true", async () => {
+    const { client, ctx } = buildCtx();
+    const result = await findTool("resolume_clear_clip").handler(
+      { layer: 1, clip: 2, confirm: false },
+      ctx
+    );
+    expect(result.isError).toBe(true);
+    expect(client.clearClip).not.toHaveBeenCalled();
+  });
+
+  it("clears with confirm=true", async () => {
+    const { client, ctx } = buildCtx();
+    await findTool("resolume_clear_clip").handler(
+      { layer: 2, clip: 3, confirm: true },
+      ctx
+    );
+    expect(client.clearClip).toHaveBeenCalledWith(2, 3);
+  });
+});
+
+describe("resolume_wipe_composition", () => {
+  it("refuses without confirm=true", async () => {
+    const { client, ctx } = buildCtx();
+    const result = await findTool("resolume_wipe_composition").handler(
+      { confirm: false },
+      ctx
+    );
+    expect(result.isError).toBe(true);
+    expect(client.wipeComposition).not.toHaveBeenCalled();
+  });
+
+  it("wipes and reports the slot count", async () => {
+    const { client, ctx } = buildCtx();
+    const result = await findTool("resolume_wipe_composition").handler(
+      { confirm: true },
+      ctx
+    );
+    expect(client.wipeComposition).toHaveBeenCalled();
+    const parsed = JSON.parse((result.content[0] as { text: string }).text) as {
+      slotsCleared: number;
+    };
+    expect(parsed.slotsCleared).toBe(27);
   });
 });
 

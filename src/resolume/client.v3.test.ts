@@ -129,6 +129,50 @@ describe("ResolumeClient.setClipPlayMode", () => {
   });
 });
 
+describe("ResolumeClient.clearClip", () => {
+  it("POSTs to the clip clear endpoint", async () => {
+    const { client, rest } = buildClient();
+    await client.clearClip(2, 5);
+    expect(rest.post).toHaveBeenCalledWith("/composition/layers/2/clips/5/clear");
+  });
+
+  it("rejects invalid indices", async () => {
+    const { client } = buildClient();
+    await expect(client.clearClip(0, 1)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "layer" },
+    });
+    await expect(client.clearClip(1, -1)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "clip" },
+    });
+  });
+});
+
+describe("ResolumeClient.wipeComposition", () => {
+  it("clears every clip slot on every layer and reports the count", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        layers: [
+          { clips: [{}, {}, {}] },
+          { clips: [{}, {}] },
+          { clips: [{}, {}, {}, {}] },
+        ],
+      }),
+    });
+    const result = await client.wipeComposition();
+    expect(result).toEqual({ layers: 3, slotsCleared: 9 });
+    expect(rest.post).toHaveBeenCalledTimes(9);
+    expect(rest.post).toHaveBeenCalledWith("/composition/layers/1/clips/1/clear");
+    expect(rest.post).toHaveBeenCalledWith("/composition/layers/3/clips/4/clear");
+  });
+
+  it("handles a composition with no layers", async () => {
+    const { client, rest } = buildClient({ get: () => ({}) });
+    const result = await client.wipeComposition();
+    expect(result).toEqual({ layers: 0, slotsCleared: 0 });
+    expect(rest.post).not.toHaveBeenCalled();
+  });
+});
+
 describe("ResolumeClient.setClipPosition", () => {
   it("PUTs nested transport.position", async () => {
     const { client, rest } = buildClient();
