@@ -20,6 +20,8 @@
  *   - File must export at least one symbol matching /^[a-z][A-Za-z0-9]*Tool$/.
  *   - Each exported tool must have name === "resolume_<snake_case>".
  *   - Names must be unique across the entire tree.
+ *   - `stability:` literal, when present, must be "stable" | "beta" | "alpha".
+ *   - `deprecated.since`, when present, must be a semver string (e.g. "0.5.0").
  *
  * Modes:
  *   default        write generated files
@@ -123,11 +125,79 @@ async function walkDir(dir, out) {
 }
 
 /**
+ * @typedef {Object} DeprecationInfo
+ * @property {string} since
+ * @property {string=} replaceWith
+ * @property {string=} removeIn
+ * @property {string=} reason
+ */
+
+/**
+ * @typedef {Object} ToolEntry
+ * @property {string} symbol
+ * @property {string} name
+ * @property {boolean} destructive
+ * @property {string} file
+ * @property {"stable"|"beta"|"alpha"} stability
+ * @property {DeprecationInfo=} deprecated
+ */
+
+/**
+ * Extract a single string literal property from an object body. Returns the
+ * captured value or null if the key is absent / empty.
+ *
+ * @param {string} body
+ * @param {string} key
+ * @returns {string | null}
+ */
+function extractStringLiteral(body, key) {
+  const re = new RegExp(`${key}\\s*:\\s*"([^"]*)"`);
+  const m = re.exec(body);
+  return m ? m[1] : null;
+}
+
+/**
+ * Extract the `deprecated: { ... }` block from a tool body and parse it into
+ * a structured DeprecationInfo. Tolerates trailing commas, single/double
+ * quoting, and missing optional keys. Returns undefined when the key is
+ * absent (the tool is not deprecated).
+ *
+ * @param {string} body
+ * @returns {DeprecationInfo | undefined}
+ */
+function extractDeprecatedBlock(body) {
+  // Match `deprecated: { ... }` at the property-position level. The inner
+  // braces are not nested in real-world tool files, so a non-greedy match
+  // up to the next `}` is sufficient. If we ever embed nested objects we
+  // should switch to a proper bracket counter.
+  const re = /deprecated\s*:\s*\{([\s\S]*?)\}/;
+  const m = re.exec(body);
+  if (!m) return undefined;
+  const inner = m[1];
+
+  const since = extractStringLiteral(inner, "since");
+  if (!since) {
+    throw new Error(
+      "deprecated block is missing required `since:` string literal"
+    );
+  }
+  /** @type {DeprecationInfo} */
+  const info = { since };
+  const replaceWith = extractStringLiteral(inner, "replaceWith");
+  if (replaceWith) info.replaceWith = replaceWith;
+  const removeIn = extractStringLiteral(inner, "removeIn");
+  if (removeIn) info.removeIn = removeIn;
+  const reason = extractStringLiteral(inner, "reason");
+  if (reason) info.reason = reason;
+  return info;
+}
+
+/**
  * Parse a single tool source file. Returns one entry per `xxxTool` export
  * found, since some files (e.g. clip/clear-clip.ts) export multiple tools.
  *
  * @param {string} absPath
- * @returns {{ symbol: string, name: string, destructive: boolean, file: string }[]}
+ * @returns {ToolEntry[]}
  */
 function parseToolFile(absPath) {
   const source = readFileSync(absPath, "utf8");
@@ -140,7 +210,7 @@ function parseToolFile(absPath) {
   const declRe =
     /export\s+const\s+([a-z][A-Za-z0-9]*Tool)\s*:\s*ToolDefinition\b[^=]*=\s*(\{[\s\S]*?\n\};)/g;
 
-  /** @type {{ symbol: string, name: string, destructive: boolean, file: string }[]} */
+  /** @type {ToolEntry[]} */
   const found = [];
   let m;
   while ((m = declRe.exec(source)) !== null) {
@@ -157,7 +227,48 @@ function parseToolFile(absPath) {
 
     const destructive = /destructive\s*:\s*true\b/.test(body);
 
-    found.push({ symbol, name, destructive, file: fileRel });
+    // Stability literal — defaults to "stable" when absent.
+    /** @type {"stable" | "beta" | "alpha"} */
+    let stability = "stable";
+    const stabilityMatch = /stability\s*:\s*"([a-z]+)"/.exec(body);
+    if (stabilityMatch) {
+      const v = stabilityMatch[1];
+      if (v !== "stable" && v !== "beta" && v !== "alpha") {
+        throw new Error(
+          `gen-tool-index: ${fileRel} exports ${symbol} with invalid stability '${v}'. Expected "stable" | "beta" | "alpha".`
+        );
+      }
+      stability = v;
+    }
+
+    let deprecated;
+    try {
+      deprecated = extractDeprecatedBlock(body);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `gen-tool-index: ${fileRel} exports ${symbol} with malformed deprecated block — ${msg}`
+      );
+    }
+    if (deprecated) {
+      // semver: MAJOR.MINOR.PATCH with optional pre-release / build suffix.
+      const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+      if (!SEMVER.test(deprecated.since)) {
+        throw new Error(
+          `gen-tool-index: ${fileRel} exports ${symbol} with invalid deprecated.since '${deprecated.since}'. Expected a semver string like "0.5.0".`
+        );
+      }
+      if (deprecated.removeIn !== undefined && !SEMVER.test(deprecated.removeIn)) {
+        throw new Error(
+          `gen-tool-index: ${fileRel} exports ${symbol} with invalid deprecated.removeIn '${deprecated.removeIn}'. Expected a semver string like "0.7.0".`
+        );
+      }
+    }
+
+    /** @type {ToolEntry} */
+    const entry = { symbol, name, destructive, file: fileRel, stability };
+    if (deprecated) entry.deprecated = deprecated;
+    found.push(entry);
   }
 
   if (found.length === 0) {
@@ -268,7 +379,11 @@ function renderGeneratedTs(grouped, entries) {
  * Build the JSON manifest payload. Tools sorted alphabetically by name so
  * diffs are line-local even when two PRs add tools in adjacent slots.
  *
- * @param {{ symbol: string, name: string, destructive: boolean, file: string }[]} entries
+ * The `stability` field is always present (defaulting to `"stable"`) so the
+ * downstream consumer never has to handle `undefined`. `deprecated` is only
+ * emitted when the tool actually carries a deprecation marker.
+ *
+ * @param {ToolEntry[]} entries
  */
 function renderManifestJson(entries) {
   const sorted = [...entries].sort((a, b) =>
@@ -276,12 +391,27 @@ function renderManifestJson(entries) {
   );
   const payload = {
     count: sorted.length,
-    tools: sorted.map((e) => ({
-      destructive: e.destructive,
-      file: e.file,
-      name: e.name,
-      symbol: e.symbol,
-    })),
+    tools: sorted.map((e) => {
+      /** @type {Record<string, unknown>} */
+      const tool = {
+        destructive: e.destructive,
+        file: e.file,
+        name: e.name,
+        stability: e.stability,
+        symbol: e.symbol,
+      };
+      if (e.deprecated) {
+        // Sort the deprecation keys alphabetically for stable diffs.
+        /** @type {Record<string, string>} */
+        const dep = {};
+        for (const k of /** @type {const} */ (["reason", "removeIn", "replaceWith", "since"])) {
+          const v = e.deprecated[k];
+          if (v !== undefined) dep[k] = v;
+        }
+        tool.deprecated = dep;
+      }
+      return tool;
+    }),
   };
   return JSON.stringify(payload, null, 2) + "\n";
 }

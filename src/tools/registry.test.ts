@@ -27,6 +27,13 @@ interface ManifestEntry {
   symbol: string;
   file: string;
   destructive: boolean;
+  stability: "stable" | "beta" | "alpha";
+  deprecated?: {
+    since: string;
+    replaceWith?: string;
+    removeIn?: string;
+    reason?: string;
+  };
 }
 
 interface Manifest {
@@ -84,6 +91,30 @@ describe("tool registry — manifest integrity (Phase 1)", () => {
         existsSync(abs),
         `manifest references missing file ${entry.file}`
       ).toBe(true);
+    }
+  });
+
+  it("every manifest entry carries a valid stability tier", () => {
+    const manifest = loadManifest();
+    const allowed = new Set(["stable", "beta", "alpha"]);
+    for (const entry of manifest.tools) {
+      expect(
+        allowed.has(entry.stability),
+        `manifest tool ${entry.name} has invalid stability '${entry.stability}'`
+      ).toBe(true);
+    }
+  });
+
+  it("every deprecated entry carries a semver-shaped since field", () => {
+    const manifest = loadManifest();
+    const SEMVER = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+    for (const entry of manifest.tools) {
+      if (entry.deprecated) {
+        expect(entry.deprecated.since).toMatch(SEMVER);
+        if (entry.deprecated.removeIn !== undefined) {
+          expect(entry.deprecated.removeIn).toMatch(SEMVER);
+        }
+      }
     }
   });
 
