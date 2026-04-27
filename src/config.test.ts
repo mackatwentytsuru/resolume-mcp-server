@@ -43,6 +43,10 @@ describe("loadConfig", () => {
   it("rejects invalid OSC ports", () => {
     expect(() => loadConfig({ RESOLUME_OSC_IN_PORT: "0" })).toThrow();
     expect(() => loadConfig({ RESOLUME_OSC_OUT_PORT: "70000" })).toThrow();
+    // Ports below 1024 are reserved (system/privileged) — reject them.
+    expect(() => loadConfig({ RESOLUME_OSC_IN_PORT: "1023" })).toThrow();
+    expect(() => loadConfig({ RESOLUME_OSC_OUT_PORT: "1023" })).toThrow();
+    expect(() => loadConfig({ RESOLUME_OSC_IN_PORT: "1024" })).not.toThrow();
   });
 
   it("accepts localhost and IPv6 loopback", () => {
@@ -80,6 +84,9 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ RESOLUME_PORT: "-1" })).toThrow();
     expect(() => loadConfig({ RESOLUME_PORT: "abc" })).toThrow();
     expect(() => loadConfig({ RESOLUME_PORT: "70000" })).toThrow();
+    // Ports below 1024 are reserved — reject them.
+    expect(() => loadConfig({ RESOLUME_PORT: "1023" })).toThrow();
+    expect(() => loadConfig({ RESOLUME_PORT: "1024" })).not.toThrow();
   });
 
   it("rejects extreme timeouts", () => {

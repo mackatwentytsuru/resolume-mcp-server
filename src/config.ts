@@ -29,11 +29,11 @@ const HostSchema = z
 
 const ConfigEnvSchema = z.object({
   RESOLUME_HOST: HostSchema.default("127.0.0.1"),
-  RESOLUME_PORT: z.coerce.number().int().min(1).max(65535).default(8080),
+  RESOLUME_PORT: z.coerce.number().int().min(1024).max(65535).default(8080),
   RESOLUME_TIMEOUT_MS: z.coerce.number().int().min(100).max(120_000).default(10_000),
   RESOLUME_OSC_HOST: HostSchema.default("127.0.0.1"),
-  RESOLUME_OSC_IN_PORT: z.coerce.number().int().min(1).max(65535).default(7000),
-  RESOLUME_OSC_OUT_PORT: z.coerce.number().int().min(1).max(65535).default(7001),
+  RESOLUME_OSC_IN_PORT: z.coerce.number().int().min(1024).max(65535).default(7000),
+  RESOLUME_OSC_OUT_PORT: z.coerce.number().int().min(1024).max(65535).default(7001),
 });
 
 export interface OscConfig {
