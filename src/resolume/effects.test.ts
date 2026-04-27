@@ -5,19 +5,269 @@ import { ResolumeApiError } from "../errors/types.js";
 
 function buildClient(handlers: Partial<{
   get: (path: string) => unknown;
+  put: (path: string, body: unknown) => unknown;
+  post: (path: string, body?: unknown) => unknown;
   postText: (path: string, text: string) => unknown;
   delete: (path: string) => unknown;
 }> = {}) {
   const rest = {
     get: vi.fn(async (path: string) => handlers.get?.(path) ?? {}),
-    put: vi.fn(),
-    post: vi.fn(),
+    put: vi.fn(async (path: string, body: unknown) => handlers.put?.(path, body) ?? undefined),
+    post: vi.fn(async (path: string, body?: unknown) => handlers.post?.(path, body) ?? undefined),
     postText: vi.fn(async (path: string, text: string) => handlers.postText?.(path, text) ?? undefined),
     delete: vi.fn(async (path: string) => handlers.delete?.(path) ?? undefined),
     getBinary: vi.fn(),
   } as unknown as ResolumeRestClient & { postText: ReturnType<typeof vi.fn> };
   return { client: new ResolumeClient(rest), rest };
 }
+
+describe("ResolumeClient.listVideoEffects", () => {
+  it("normalizes the catalog into idstring + name pairs", async () => {
+    const { client } = buildClient({
+      get: () => [
+        { idstring: "A101", name: "Add Subtract", presets: [] },
+        { idstring: "A120", name: "Auto Mask", presets: [] },
+        { idstring: "BAD", name: "" }, // dropped: empty name
+        { name: "no idstring" }, // dropped: missing idstring
+        "garbage", // dropped: not an object
+      ],
+    });
+    const effects = await client.listVideoEffects();
+    expect(effects).toEqual([
+      { idstring: "A101", name: "Add Subtract" },
+      { idstring: "A120", name: "Auto Mask" },
+    ]);
+  });
+
+  it("returns empty array when API returns non-array", async () => {
+    const { client } = buildClient({ get: () => ({}) });
+    expect(await client.listVideoEffects()).toEqual([]);
+  });
+});
+
+describe("ResolumeClient.listLayerEffects", () => {
+  it("returns rich parameter metadata: type, value, and range for each param", async () => {
+    const { client } = buildClient({
+      get: () => ({
+        video: {
+          effects: [
+            {
+              id: 100,
+              name: "Transform",
+              params: {
+                Scale: { valuetype: "ParamRange", value: 100, min: 0, max: 1000 },
+                "Position X": { valuetype: "ParamRange", value: 0, min: -32768, max: 32768 },
+                Mode: {
+                  valuetype: "ParamChoice",
+                  value: "Linear",
+                  options: ["Linear", "Bezier"],
+                },
+              },
+            },
+          ],
+        },
+      }),
+    });
+    const effects = await client.listLayerEffects(1);
+    expect(effects).toHaveLength(1);
+    expect(effects[0].id).toBe(100);
+    const params = effects[0].params;
+    const scale = params.find((p) => p.name === "Scale");
+    expect(scale).toMatchObject({
+      name: "Scale",
+      valuetype: "ParamRange",
+      value: 100,
+      min: 0,
+      max: 1000,
+    });
+    const mode = params.find((p) => p.name === "Mode");
+    expect(mode).toMatchObject({
+      name: "Mode",
+      valuetype: "ParamChoice",
+      value: "Linear",
+      options: ["Linear", "Bezier"],
+    });
+  });
+});
+
+describe("ResolumeClient.setEffectParameter", () => {
+  it("includes the target effect's id in the PUT body so Resolume actually applies the change", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [
+            { id: 100, params: { Scale: { value: 1, valuetype: "ParamRange" } } },
+            { id: 200, params: { Scale: { value: 2, valuetype: "ParamRange" } } },
+          ],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 2, "Scale", 50);
+    expect(rest.put).toHaveBeenCalledWith("/composition/layers/1", {
+      video: {
+        effects: [{}, { id: 200, params: { Scale: { value: 50 } } }],
+      },
+    });
+  });
+
+  it("coerces string-formatted numbers to actual numbers for ParamRange", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Scale: { valuetype: "ParamRange" } } }],
+        },
+      }),
+    });
+    // MCP wire-encoded numbers can arrive as strings — Resolume silently
+    // rejects "175" but accepts 175.
+    await client.setEffectParameter(1, 1, "Scale", "175" as unknown as number);
+    expect(rest.put).toHaveBeenCalledWith("/composition/layers/1", {
+      video: { effects: [{ id: 1, params: { Scale: { value: 175 } } }] },
+    });
+  });
+
+  it("rejects non-numeric strings for ParamRange with a clear error", async () => {
+    const { client } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Scale: { valuetype: "ParamRange" } } }],
+        },
+      }),
+    });
+    await expect(
+      client.setEffectParameter(1, 1, "Scale", "abc")
+    ).rejects.toMatchObject({ detail: { kind: "InvalidValue", field: "Scale" } });
+  });
+
+  it("coerces 'true'/'false' strings to booleans for ParamBoolean", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Active: { valuetype: "ParamBoolean" } } }],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 1, "Active", "true" as unknown as boolean);
+    expect(rest.put).toHaveBeenCalledWith("/composition/layers/1", {
+      video: { effects: [{ id: 1, params: { Active: { value: true } } }] },
+    });
+  });
+
+  it("coerces numeric 0/1 to booleans for ParamBoolean", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Active: { valuetype: "ParamBoolean" } } }],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 1, "Active", 1 as unknown as boolean);
+    expect(rest.put).toHaveBeenLastCalledWith("/composition/layers/1", {
+      video: { effects: [{ id: 1, params: { Active: { value: true } } }] },
+    });
+    await client.setEffectParameter(1, 1, "Active", 0 as unknown as boolean);
+    expect(rest.put).toHaveBeenLastCalledWith("/composition/layers/1", {
+      video: { effects: [{ id: 1, params: { Active: { value: false } } }] },
+    });
+  });
+
+  it("rejects non-true/false strings for ParamBoolean with a clear hint", async () => {
+    const { client } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Active: { valuetype: "ParamBoolean" } } }],
+        },
+      }),
+    });
+    await expect(
+      client.setEffectParameter(1, 1, "Active", "yes" as unknown as boolean)
+    ).rejects.toMatchObject({
+      detail: { kind: "InvalidValue", field: "Active" },
+    });
+  });
+
+  it("rejects __proto__ as paramName (own-property check, not 'in')", async () => {
+    const { client } = buildClient({
+      get: () => ({
+        video: { effects: [{ id: 1, params: { Scale: { valuetype: "ParamRange" } } }] },
+      }),
+    });
+    await expect(
+      client.setEffectParameter(1, 1, "__proto__", 1)
+    ).rejects.toMatchObject({
+      detail: { kind: "InvalidValue", field: "paramName" },
+    });
+    await expect(
+      client.setEffectParameter(1, 1, "constructor", 1)
+    ).rejects.toMatchObject({
+      detail: { kind: "InvalidValue", field: "paramName" },
+    });
+  });
+
+  it("uses what:'effect' (not 'clip') for effect-index errors", async () => {
+    const { client } = buildClient({
+      get: () => ({ video: { effects: [{ id: 1, params: { X: {} } }] } }),
+    });
+    await expect(client.setEffectParameter(1, 99, "X", 1)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "effect", index: 99 },
+    });
+    await expect(client.setEffectParameter(1, 0, "X", 1)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "effect", index: 0 },
+    });
+  });
+
+  it("passes ParamChoice values through as strings", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Mode: { valuetype: "ParamChoice" } } }],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 1, "Mode", "Linear");
+    expect(rest.put).toHaveBeenCalledWith("/composition/layers/1", {
+      video: { effects: [{ id: 1, params: { Mode: { value: "Linear" } } }] },
+    });
+  });
+
+  it("rejects invalid effectIndex (<1)", async () => {
+    const { client } = buildClient();
+    await expect(client.setEffectParameter(1, 0, "Scale", 1)).rejects.toBeInstanceOf(
+      ResolumeApiError
+    );
+  });
+
+  it("rejects empty paramName", async () => {
+    const { client } = buildClient();
+    await expect(client.setEffectParameter(1, 1, "", 1)).rejects.toMatchObject({
+      detail: { kind: "InvalidValue", field: "paramName" },
+    });
+  });
+
+  it("rejects effectIndex past the actual count with a helpful hint", async () => {
+    const { client } = buildClient({
+      get: () => ({ video: { effects: [{ id: 1, params: { X: {} } }] } }),
+    });
+    await expect(client.setEffectParameter(1, 5, "X", 1)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex" },
+    });
+  });
+
+  it("rejects unknown paramName with the list of available params", async () => {
+    const { client } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Scale: {}, "Position X": {} } }],
+        },
+      }),
+    });
+    await expect(
+      client.setEffectParameter(1, 1, "Bogus", 1)
+    ).rejects.toMatchObject({
+      detail: { kind: "InvalidValue", field: "paramName" },
+    });
+  });
+});
 
 describe("ResolumeClient.addEffectToLayer", () => {
   it("POSTs the drag-drop URI as text/plain to the layer's /add endpoint", async () => {
