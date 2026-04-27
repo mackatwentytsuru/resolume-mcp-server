@@ -1,72 +1,95 @@
 import { describe, it, expect, vi } from "vitest";
 import { ResolumeClient } from "./client.js";
 import { ResolumeRestClient } from "./rest.js";
+import { ResolumeApiError } from "../errors/types.js";
 
 function buildClient(handlers: Partial<{
   get: (path: string) => unknown;
   put: (path: string, body: unknown) => unknown;
+  post: (path: string, body?: unknown) => unknown;
 }> = {}) {
   const rest = {
     get: vi.fn(async (path: string) => handlers.get?.(path) ?? {}),
     put: vi.fn(async (path: string, body: unknown) => handlers.put?.(path, body) ?? undefined),
-    post: vi.fn(),
+    post: vi.fn(async (path: string, body?: unknown) => handlers.post?.(path, body) ?? undefined),
     delete: vi.fn(),
-    getBinary: vi.fn(),
+    getBinary: vi.fn(async () => ({ base64: "", mediaType: "image/png" })),
   } as unknown as ResolumeRestClient;
   return { client: new ResolumeClient(rest), rest };
 }
 
-describe("ResolumeClient.getBeatSnap", () => {
-  it("returns value and options from composition", async () => {
-    const { client } = buildClient({
-      get: () => ({
-        clipbeatsnap: {
-          value: "1 Bar",
-          options: ["None", "1 Bar", "1/2 Bar"],
-        },
-      }),
+describe("ResolumeClient.triggerClip", () => {
+  it("POSTs to the connect endpoint with 1-based indices", async () => {
+    const { client, rest } = buildClient();
+    await client.triggerClip(2, 5);
+    expect(rest.post).toHaveBeenCalledWith("/composition/layers/2/clips/5/connect");
+  });
+
+  it("rejects 0 or negative indices with InvalidIndex hint", async () => {
+    const { client } = buildClient();
+    await expect(client.triggerClip(0, 1)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "layer" },
     });
-    expect(await client.getBeatSnap()).toEqual({
-      value: "1 Bar",
-      options: ["None", "1 Bar", "1/2 Bar"],
+    await expect(client.triggerClip(1, -1)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "clip" },
     });
   });
 
-  it("returns nulls/empty when composition lacks the field", async () => {
-    const { client } = buildClient({ get: () => ({}) });
-    expect(await client.getBeatSnap()).toEqual({ value: null, options: [] });
+  it("rejects non-integer indices", async () => {
+    const { client } = buildClient();
+    await expect(client.triggerClip(1.5, 1)).rejects.toBeInstanceOf(ResolumeApiError);
   });
 });
 
-describe("ResolumeClient.setBeatSnap", () => {
-  it("PUTs the value to /composition", async () => {
+describe("ResolumeClient.selectClip", () => {
+  it("posts to /select", async () => {
+    const { client, rest } = buildClient();
+    await client.selectClip(2, 7);
+    expect(rest.post).toHaveBeenCalledWith("/composition/layers/2/clips/7/select");
+  });
+});
+
+describe("ResolumeClient.clearClip", () => {
+  it("POSTs to the clip clear endpoint", async () => {
+    const { client, rest } = buildClient();
+    await client.clearClip(2, 5);
+    expect(rest.post).toHaveBeenCalledWith("/composition/layers/2/clips/5/clear");
+  });
+
+  it("rejects invalid indices", async () => {
+    const { client } = buildClient();
+    await expect(client.clearClip(0, 1)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "layer" },
+    });
+    await expect(client.clearClip(1, -1)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "clip" },
+    });
+  });
+});
+
+describe("ResolumeClient.wipeComposition", () => {
+  it("clears every clip slot on every layer and reports the count", async () => {
     const { client, rest } = buildClient({
       get: () => ({
-        clipbeatsnap: { options: ["None", "1 Bar", "1/2 Bar"] },
+        layers: [
+          { clips: [{}, {}, {}] },
+          { clips: [{}, {}] },
+          { clips: [{}, {}, {}, {}] },
+        ],
       }),
     });
-    await client.setBeatSnap("1/2 Bar");
-    expect(rest.put).toHaveBeenCalledWith("/composition", {
-      clipbeatsnap: { value: "1/2 Bar" },
-    });
+    const result = await client.wipeComposition();
+    expect(result).toEqual({ layers: 3, slotsCleared: 9 });
+    expect(rest.post).toHaveBeenCalledTimes(9);
+    expect(rest.post).toHaveBeenCalledWith("/composition/layers/1/clips/1/clear");
+    expect(rest.post).toHaveBeenCalledWith("/composition/layers/3/clips/4/clear");
   });
 
-  it("rejects unknown values with the available list in the hint", async () => {
-    const { client } = buildClient({
-      get: () => ({
-        clipbeatsnap: { options: ["None", "1 Bar"] },
-      }),
-    });
-    await expect(client.setBeatSnap("Bogus")).rejects.toMatchObject({
-      detail: { kind: "InvalidValue", field: "beatSnap" },
-    });
-  });
-
-  it("rejects empty string", async () => {
-    const { client } = buildClient();
-    await expect(client.setBeatSnap("")).rejects.toMatchObject({
-      detail: { kind: "InvalidValue" },
-    });
+  it("handles a composition with no layers", async () => {
+    const { client, rest } = buildClient({ get: () => ({}) });
+    const result = await client.wipeComposition();
+    expect(result).toEqual({ layers: 0, slotsCleared: 0 });
+    expect(rest.post).not.toHaveBeenCalled();
   });
 });
 
@@ -129,50 +152,6 @@ describe("ResolumeClient.setClipPlayMode", () => {
   });
 });
 
-describe("ResolumeClient.clearClip", () => {
-  it("POSTs to the clip clear endpoint", async () => {
-    const { client, rest } = buildClient();
-    await client.clearClip(2, 5);
-    expect(rest.post).toHaveBeenCalledWith("/composition/layers/2/clips/5/clear");
-  });
-
-  it("rejects invalid indices", async () => {
-    const { client } = buildClient();
-    await expect(client.clearClip(0, 1)).rejects.toMatchObject({
-      detail: { kind: "InvalidIndex", what: "layer" },
-    });
-    await expect(client.clearClip(1, -1)).rejects.toMatchObject({
-      detail: { kind: "InvalidIndex", what: "clip" },
-    });
-  });
-});
-
-describe("ResolumeClient.wipeComposition", () => {
-  it("clears every clip slot on every layer and reports the count", async () => {
-    const { client, rest } = buildClient({
-      get: () => ({
-        layers: [
-          { clips: [{}, {}, {}] },
-          { clips: [{}, {}] },
-          { clips: [{}, {}, {}, {}] },
-        ],
-      }),
-    });
-    const result = await client.wipeComposition();
-    expect(result).toEqual({ layers: 3, slotsCleared: 9 });
-    expect(rest.post).toHaveBeenCalledTimes(9);
-    expect(rest.post).toHaveBeenCalledWith("/composition/layers/1/clips/1/clear");
-    expect(rest.post).toHaveBeenCalledWith("/composition/layers/3/clips/4/clear");
-  });
-
-  it("handles a composition with no layers", async () => {
-    const { client, rest } = buildClient({ get: () => ({}) });
-    const result = await client.wipeComposition();
-    expect(result).toEqual({ layers: 0, slotsCleared: 0 });
-    expect(rest.post).not.toHaveBeenCalled();
-  });
-});
-
 describe("ResolumeClient.setClipPosition", () => {
   it("PUTs nested transport.position", async () => {
     const { client, rest } = buildClient();
@@ -190,5 +169,14 @@ describe("ResolumeClient.setClipPosition", () => {
     await expect(client.setClipPosition(1, 1, NaN)).rejects.toMatchObject({
       detail: { kind: "InvalidValue" },
     });
+  });
+});
+
+describe("ResolumeClient.getClipThumbnail", () => {
+  it("appends a cache-busting timestamp as a query parameter", async () => {
+    const { client, rest } = buildClient();
+    await client.getClipThumbnail(1, 2);
+    const call = (rest.getBinary as unknown as { mock: { calls: string[][] } }).mock.calls[0][0];
+    expect(call).toMatch(/^\/composition\/layers\/1\/clips\/2\/thumbnail\?t=\d+$/);
   });
 });

@@ -7,186 +7,19 @@ function buildClient(handlers: Partial<{
   get: (path: string) => unknown;
   put: (path: string, body: unknown) => unknown;
   post: (path: string, body?: unknown) => unknown;
+  postText: (path: string, text: string) => unknown;
+  delete: (path: string) => unknown;
 }> = {}) {
   const rest = {
     get: vi.fn(async (path: string) => handlers.get?.(path) ?? {}),
     put: vi.fn(async (path: string, body: unknown) => handlers.put?.(path, body) ?? undefined),
     post: vi.fn(async (path: string, body?: unknown) => handlers.post?.(path, body) ?? undefined),
-    delete: vi.fn(),
+    postText: vi.fn(async (path: string, text: string) => handlers.postText?.(path, text) ?? undefined),
+    delete: vi.fn(async (path: string) => handlers.delete?.(path) ?? undefined),
     getBinary: vi.fn(),
-  } as unknown as ResolumeRestClient;
+  } as unknown as ResolumeRestClient & { postText: ReturnType<typeof vi.fn> };
   return { client: new ResolumeClient(rest), rest };
 }
-
-describe("ResolumeClient.triggerColumn", () => {
-  it("POSTs to the column connect endpoint", async () => {
-    const { client, rest } = buildClient();
-    await client.triggerColumn(3);
-    expect(rest.post).toHaveBeenCalledWith("/composition/columns/3/connect");
-  });
-
-  it("rejects invalid index", async () => {
-    const { client } = buildClient();
-    await expect(client.triggerColumn(0)).rejects.toMatchObject({
-      detail: { kind: "InvalidIndex", what: "column" },
-    });
-  });
-});
-
-describe("ResolumeClient.selectDeck", () => {
-  it("POSTs to the deck select endpoint", async () => {
-    const { client, rest } = buildClient();
-    await client.selectDeck(2);
-    expect(rest.post).toHaveBeenCalledWith("/composition/decks/2/select");
-  });
-
-  it("rejects invalid index", async () => {
-    const { client } = buildClient();
-    await expect(client.selectDeck(-1)).rejects.toMatchObject({
-      detail: { kind: "InvalidIndex", what: "deck" },
-    });
-  });
-});
-
-describe("ResolumeClient.setLayerBypass", () => {
-  it("PUTs nested bypassed body", async () => {
-    const { client, rest } = buildClient();
-    await client.setLayerBypass(2, true);
-    expect(rest.put).toHaveBeenCalledWith("/composition/layers/2", {
-      bypassed: { value: true },
-    });
-  });
-});
-
-describe("ResolumeClient.setLayerBlendMode", () => {
-  it("PUTs nested mixer body with the exact 'Blend Mode' key (capital B, M)", async () => {
-    const { client, rest } = buildClient({
-      get: () => ({
-        video: {
-          mixer: {
-            "Blend Mode": { options: ["Add", "Multiply", "Screen"] },
-          },
-        },
-      }),
-    });
-    await client.setLayerBlendMode(1, "Multiply");
-    expect(rest.put).toHaveBeenCalledWith("/composition/layers/1", {
-      video: { mixer: { "Blend Mode": { value: "Multiply" } } },
-    });
-  });
-
-  it("rejects empty blend mode string", async () => {
-    const { client } = buildClient();
-    await expect(client.setLayerBlendMode(1, "")).rejects.toMatchObject({
-      detail: { kind: "InvalidValue" },
-    });
-  });
-
-  it("rejects unknown blend mode and includes available list in the hint", async () => {
-    const { client } = buildClient({
-      get: () => ({
-        video: {
-          mixer: {
-            "Blend Mode": { options: ["Add", "Multiply", "Screen"] },
-          },
-        },
-      }),
-    });
-    await expect(client.setLayerBlendMode(1, "Bogus")).rejects.toMatchObject({
-      detail: { kind: "InvalidValue", field: "blendMode" },
-    });
-  });
-
-  it("falls through (no validation) when the layer doesn't expose options", async () => {
-    const { client, rest } = buildClient({
-      get: () => ({}),
-    });
-    await client.setLayerBlendMode(1, "Anything");
-    expect(rest.put).toHaveBeenCalled();
-  });
-});
-
-describe("ResolumeClient.getLayerBlendModes", () => {
-  it("returns the options array from the layer's mixer", async () => {
-    const { client } = buildClient({
-      get: () => ({
-        video: {
-          mixer: {
-            "Blend Mode": {
-              options: ["Add", "Multiply", "Screen"],
-            },
-          },
-        },
-      }),
-    });
-    const modes = await client.getLayerBlendModes(1);
-    expect(modes).toEqual(["Add", "Multiply", "Screen"]);
-  });
-
-  it("returns empty array when options are missing", async () => {
-    const { client } = buildClient({ get: () => ({}) });
-    expect(await client.getLayerBlendModes(1)).toEqual([]);
-  });
-});
-
-describe("ResolumeClient.setTempo", () => {
-  it("PUTs to /composition with nested tempocontroller body", async () => {
-    const { client, rest } = buildClient();
-    await client.setTempo(140);
-    expect(rest.put).toHaveBeenCalledWith("/composition", {
-      tempocontroller: { tempo: { value: 140 } },
-    });
-  });
-
-  it("rejects values out of Resolume's range", async () => {
-    const { client } = buildClient();
-    await expect(client.setTempo(0)).rejects.toMatchObject({
-      detail: { kind: "InvalidValue", field: "bpm" },
-    });
-    await expect(client.setTempo(1000)).rejects.toMatchObject({
-      detail: { kind: "InvalidValue" },
-    });
-    await expect(client.setTempo(NaN)).rejects.toMatchObject({
-      detail: { kind: "InvalidValue" },
-    });
-  });
-});
-
-describe("ResolumeClient.tapTempo", () => {
-  it("PUTs tempo_tap with value=true (event parameter trigger)", async () => {
-    const { client, rest } = buildClient();
-    await client.tapTempo();
-    expect(rest.put).toHaveBeenCalledWith("/composition", {
-      tempocontroller: { tempo_tap: { value: true } },
-    });
-  });
-});
-
-describe("ResolumeClient.resyncTempo", () => {
-  it("PUTs resync trigger", async () => {
-    const { client, rest } = buildClient();
-    await client.resyncTempo();
-    expect(rest.put).toHaveBeenCalledWith("/composition", {
-      tempocontroller: { resync: { value: true } },
-    });
-  });
-});
-
-describe("ResolumeClient.getTempo", () => {
-  it("extracts BPM and range from composition", async () => {
-    const { client } = buildClient({
-      get: () => ({
-        tempocontroller: { tempo: { value: 132, min: 20, max: 500 } },
-      }),
-    });
-    expect(await client.getTempo()).toEqual({ bpm: 132, min: 20, max: 500 });
-  });
-
-  it("returns nulls when tempocontroller missing", async () => {
-    const { client } = buildClient({ get: () => ({}) });
-    expect(await client.getTempo()).toEqual({ bpm: null, min: null, max: null });
-  });
-});
 
 describe("ResolumeClient.listVideoEffects", () => {
   it("normalizes the catalog into idstring + name pairs", async () => {
@@ -432,6 +265,100 @@ describe("ResolumeClient.setEffectParameter", () => {
       client.setEffectParameter(1, 1, "Bogus", 1)
     ).rejects.toMatchObject({
       detail: { kind: "InvalidValue", field: "paramName" },
+    });
+  });
+});
+
+describe("ResolumeClient.addEffectToLayer", () => {
+  it("POSTs the drag-drop URI as text/plain to the layer's /add endpoint", async () => {
+    const { client, rest } = buildClient();
+    await client.addEffectToLayer(2, "Blur");
+    expect(rest.postText).toHaveBeenCalledWith(
+      "/composition/layers/2/effects/video/add",
+      "effect:///video/Blur"
+    );
+  });
+
+  it("URL-encodes multi-word effect names (space → %20)", async () => {
+    const { client, rest } = buildClient();
+    await client.addEffectToLayer(1, "Hue Rotate");
+    expect(rest.postText).toHaveBeenCalledWith(
+      "/composition/layers/1/effects/video/add",
+      "effect:///video/Hue%20Rotate"
+    );
+  });
+
+  it("trims surrounding whitespace from the effect name", async () => {
+    const { client, rest } = buildClient();
+    await client.addEffectToLayer(1, "  Bloom  ");
+    expect(rest.postText).toHaveBeenCalledWith(
+      "/composition/layers/1/effects/video/add",
+      "effect:///video/Bloom"
+    );
+  });
+
+  it("rejects empty / whitespace-only effect names with InvalidValue", async () => {
+    const { client } = buildClient();
+    await expect(client.addEffectToLayer(1, "")).rejects.toMatchObject({
+      detail: { kind: "InvalidValue", field: "effectName" },
+    });
+    await expect(client.addEffectToLayer(1, "   ")).rejects.toMatchObject({
+      detail: { kind: "InvalidValue" },
+    });
+  });
+
+  it("rejects invalid layer indices with InvalidIndex", async () => {
+    const { client } = buildClient();
+    await expect(client.addEffectToLayer(0, "Blur")).rejects.toBeInstanceOf(ResolumeApiError);
+    await expect(client.addEffectToLayer(0, "Blur")).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "layer" },
+    });
+  });
+});
+
+describe("ResolumeClient.removeEffectFromLayer", () => {
+  function layerWithEffects(n: number) {
+    const effects = Array.from({ length: n }, (_, i) => ({
+      id: 1000 + i,
+      name: `Effect${i}`,
+    }));
+    return { video: { effects } };
+  }
+
+  it("DELETEs at the 0-based REST index when 1-based input is provided", async () => {
+    const { client, rest } = buildClient({
+      get: () => layerWithEffects(3),
+    });
+    await client.removeEffectFromLayer(2, 2); // 1-based → 0-based 1
+    expect(rest.delete).toHaveBeenCalledWith(
+      "/composition/layers/2/effects/video/1"
+    );
+  });
+
+  it("validates against the live layer's effect count", async () => {
+    const { client, rest } = buildClient({
+      get: () => layerWithEffects(2),
+    });
+    await expect(client.removeEffectFromLayer(2, 5)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "effect" },
+    });
+    expect(rest.delete).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-integer or non-positive effect indices", async () => {
+    const { client } = buildClient();
+    await expect(client.removeEffectFromLayer(1, 0)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "effect" },
+    });
+    await expect(client.removeEffectFromLayer(1, 1.5)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex" },
+    });
+  });
+
+  it("rejects invalid layer indices", async () => {
+    const { client } = buildClient();
+    await expect(client.removeEffectFromLayer(0, 1)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "layer" },
     });
   });
 });
