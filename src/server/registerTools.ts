@@ -52,12 +52,37 @@ function registerOne(server: McpServer, ctx: ToolContext, tool: AnyTool): void {
   );
 }
 
+/**
+ * Module-scoped set tracking which deprecated tools have already produced
+ * a stderr warning during this process. Ensures we don't spam the log on
+ * every invocation of a deprecated tool.
+ *
+ * Exported for test reset only — production code should never read or
+ * mutate it directly.
+ */
+export const __deprecationWarned = new Set<string>();
+
+function warnIfDeprecated(tool: AnyTool): void {
+  if (!tool.deprecated) return;
+  if (__deprecationWarned.has(tool.name)) return;
+  __deprecationWarned.add(tool.name);
+  const dep = tool.deprecated;
+  const parts = [`'${tool.name}' is deprecated since ${dep.since}`];
+  if (dep.replaceWith) parts.push(`use ${dep.replaceWith} instead`);
+  if (dep.removeIn) parts.push(`removed in ${dep.removeIn}`);
+  if (dep.reason) parts.push(dep.reason);
+  process.stderr.write(
+    `[resolume-mcp-server] WARNING: tool ${parts.join(" — ")}\n`
+  );
+}
+
 async function safeHandle(
   tool: AnyTool,
   schema: z.ZodObject<z.ZodRawShape>,
   ctx: ToolContext,
   rawArgs: unknown
 ): Promise<ToolResult> {
+  warnIfDeprecated(tool);
   try {
     // The SDK already validated against the shape; we re-validate with strict
     // mode to catch unknown keys and produce a clear, schema-stable error message.
