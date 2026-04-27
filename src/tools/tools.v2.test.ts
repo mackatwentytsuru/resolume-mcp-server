@@ -11,13 +11,21 @@ function buildCtx(overrides: Partial<ResolumeClient> = {}) {
     getLayerBlendModes: vi.fn(async () => ["Add", "Multiply", "Screen"]),
     setTempo: vi.fn(async () => undefined),
     tapTempo: vi.fn(async () => undefined),
+    resyncTempo: vi.fn(async () => undefined),
     getTempo: vi.fn(async () => ({ bpm: 128, min: 20, max: 500 })),
     listVideoEffects: vi.fn(async () => [
       { idstring: "A101", name: "Add Subtract" },
       { idstring: "A120", name: "Auto Mask" },
     ]),
     listLayerEffects: vi.fn(async () => [
-      { id: 100, name: "Transform", params: ["Scale", "Position X"] },
+      {
+        id: 100,
+        name: "Transform",
+        params: [
+          { name: "Scale", valuetype: "ParamRange", value: 100, min: 0, max: 1000 },
+          { name: "Position X", valuetype: "ParamRange", value: 0, min: -32768, max: 32768 },
+        ],
+      },
     ]),
     setEffectParameter: vi.fn(async () => undefined),
     ...overrides,
@@ -119,6 +127,15 @@ describe("resolume_tap_tempo", () => {
   });
 });
 
+describe("resolume_resync_tempo", () => {
+  it("forwards to client.resyncTempo", async () => {
+    const { client, ctx } = buildCtx();
+    const result = await findTool("resolume_resync_tempo").handler({}, ctx);
+    expect(client.resyncTempo).toHaveBeenCalled();
+    expect(result.isError).toBeFalsy();
+  });
+});
+
 describe("resolume_get_tempo", () => {
   it("returns the tempo state as JSON", async () => {
     const { ctx } = buildCtx();
@@ -144,17 +161,22 @@ describe("resolume_list_video_effects", () => {
 });
 
 describe("resolume_list_layer_effects", () => {
-  it("returns layer effects with positional indices", async () => {
+  it("returns layer effects with positional indices and rich param metadata", async () => {
     const { ctx } = buildCtx();
     const result = await findTool("resolume_list_layer_effects").handler({ layer: 1 }, ctx);
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as {
-      effects: { effectIndex: number; name: string; params: string[] }[];
+      effects: {
+        effectIndex: number;
+        name: string;
+        params: { name: string; valuetype: string; min?: number; max?: number }[];
+      }[];
     };
     expect(parsed.effects[0]).toMatchObject({
       effectIndex: 1,
       name: "Transform",
-      params: ["Scale", "Position X"],
     });
+    const scale = parsed.effects[0].params.find((p) => p.name === "Scale");
+    expect(scale).toMatchObject({ valuetype: "ParamRange", min: 0, max: 1000 });
   });
 });
 

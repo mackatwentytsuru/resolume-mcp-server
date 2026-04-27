@@ -16,6 +16,7 @@ import { selectDeckTool } from "./deck/select-deck.js";
 import { setBpmTool } from "./tempo/set-bpm.js";
 import { tapTempoTool } from "./tempo/tap-tempo.js";
 import { getTempoTool } from "./tempo/get-tempo.js";
+import { resyncTempoTool } from "./tempo/resync-tempo.js";
 import {
   listVideoEffectsTool,
   listLayerEffectsTool,
@@ -75,6 +76,7 @@ export const allTools: ReadonlyArray<AnyTool> = [
   eraseTool(getTempoTool),
   eraseTool(setBpmTool),
   eraseTool(tapTempoTool),
+  eraseTool(resyncTempoTool),
   // Effects
   eraseTool(listVideoEffectsTool),
   eraseTool(listLayerEffectsTool),

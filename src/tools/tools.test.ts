@@ -26,9 +26,16 @@ function buildCtx(overrides: Partial<ResolumeClient> = {}) {
     getLayerBlendModes: vi.fn(async () => ["Add", "Multiply"]),
     setTempo: vi.fn(async () => undefined),
     tapTempo: vi.fn(async () => undefined),
+    resyncTempo: vi.fn(async () => undefined),
     getTempo: vi.fn(async () => ({ bpm: 128, min: 20, max: 500 })),
     listVideoEffects: vi.fn(async () => [{ idstring: "A101", name: "Add Subtract" }]),
-    listLayerEffects: vi.fn(async () => [{ id: 1, name: "Transform", params: ["Scale"] }]),
+    listLayerEffects: vi.fn(async () => [
+      {
+        id: 1,
+        name: "Transform",
+        params: [{ name: "Scale", valuetype: "ParamRange", value: 100, min: 0, max: 1000 }],
+      },
+    ]),
     setEffectParameter: vi.fn(async () => undefined),
     getClipThumbnail: vi.fn(async () => ({ base64: "AAAA", mediaType: "image/png" })),
     ...overrides,
@@ -45,8 +52,8 @@ function findTool(name: string) {
 describe("tool registry", () => {
   it("registers all v0.2 tools with unique resolume_-prefixed names", () => {
     const names = allTools.map((t) => t.name);
-    // 17 tools as of v0.2.
-    expect(names.length).toBe(17);
+    // 18 tools as of v0.2.2.
+    expect(names.length).toBe(18);
     for (const n of names) {
       expect(n).toMatch(/^resolume_/);
     }

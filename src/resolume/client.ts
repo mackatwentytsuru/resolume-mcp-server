@@ -209,16 +209,71 @@ export class ResolumeClient {
 
   async listLayerEffects(
     layer: number
-  ): Promise<Array<{ id: number; name: string; params: string[] }>> {
+  ): Promise<
+    Array<{
+      id: number;
+      name: string;
+      /** Detailed parameter info: name, type, current value, range when applicable. */
+      params: Array<{
+        name: string;
+        valuetype: string | null;
+        value: number | string | boolean | null;
+        min?: number;
+        max?: number;
+        options?: string[];
+      }>;
+    }>
+  > {
     assertIndex("layer", layer);
     const raw = (await this.rest.get(`/composition/layers/${layer}`)) as {
-      video?: { effects?: Array<{ id?: number; name?: string; params?: Record<string, unknown> }> };
+      video?: {
+        effects?: Array<{
+          id?: number;
+          name?: string;
+          params?: Record<
+            string,
+            {
+              valuetype?: string;
+              value?: unknown;
+              min?: number;
+              max?: number;
+              options?: unknown[];
+            }
+          >;
+        }>;
+      };
     };
     const effects = raw?.video?.effects ?? [];
     return effects.map((e) => ({
       id: typeof e.id === "number" ? e.id : 0,
       name: typeof e.name === "string" ? e.name : "",
-      params: e.params ? Object.keys(e.params) : [],
+      params: e.params
+        ? Object.entries(e.params).map(([name, p]) => {
+            const v = p?.value;
+            const valueOut: number | string | boolean | null =
+              typeof v === "number" || typeof v === "string" || typeof v === "boolean"
+                ? v
+                : null;
+            const out: {
+              name: string;
+              valuetype: string | null;
+              value: number | string | boolean | null;
+              min?: number;
+              max?: number;
+              options?: string[];
+            } = {
+              name,
+              valuetype: p?.valuetype ?? null,
+              value: valueOut,
+            };
+            if (typeof p?.min === "number") out.min = p.min;
+            if (typeof p?.max === "number") out.max = p.max;
+            if (Array.isArray(p?.options)) {
+              out.options = p.options.filter((o): o is string => typeof o === "string");
+            }
+            return out;
+          })
+        : [],
     }));
   }
 
@@ -257,7 +312,10 @@ export class ResolumeClient {
 
     const rawLayer = (await this.rest.get(`/composition/layers/${layer}`)) as {
       video?: {
-        effects?: Array<{ id?: number; params?: Record<string, unknown> }>;
+        effects?: Array<{
+          id?: number;
+          params?: Record<string, { valuetype?: string } | undefined>;
+        }>;
       };
     };
     const effects = rawLayer?.video?.effects ?? [];
@@ -287,11 +345,16 @@ export class ResolumeClient {
       });
     }
 
-    // Build the nested PUT body. Pad with empty objects up to effectIndex,
-    // then include the target effect's id and the param to set.
+    // Resolume silently rejects type-mismatched values (e.g. string "175" for a
+    // ParamRange) — the API returns 204 but ignores the change. Coerce based on
+    // the parameter's declared valuetype so the LLM doesn't have to care about
+    // exact JSON types when passing values through MCP wire encoding.
+    const valuetype = target.params[paramName]?.valuetype;
+    const coerced = coerceParamValue(value, valuetype, paramName);
+
     const body: Array<Record<string, unknown>> = [];
     for (let i = 0; i < effectIndex - 1; i += 1) body.push({});
-    body.push({ id: target.id, params: { [paramName]: { value } } });
+    body.push({ id: target.id, params: { [paramName]: { value: coerced } } });
     await this.rest.put(`/composition/layers/${layer}`, {
       video: { effects: body },
     });
@@ -312,6 +375,60 @@ export class ResolumeClient {
       `/composition/layers/${layer}/clips/${clip}/thumbnail?t=${cacheBuster()}`
     );
   }
+}
+
+/**
+ * Coerce an LLM-supplied parameter value to the type Resolume expects for the
+ * given valuetype. Without this, e.g. `value: "175"` for a ParamRange would be
+ * silently ignored (Resolume returns 204 but doesn't apply the change).
+ */
+export function coerceParamValue(
+  value: number | string | boolean,
+  valuetype: string | undefined,
+  paramName: string
+): number | string | boolean {
+  if (!valuetype) return value;
+
+  const numericTypes = new Set(["ParamRange", "ParamNumber", "ParamFloat", "ParamInt"]);
+  const booleanTypes = new Set(["ParamBoolean"]);
+  const stringTypes = new Set(["ParamChoice", "ParamString", "ParamText"]);
+
+  if (numericTypes.has(valuetype)) {
+    if (typeof value === "number") return value;
+    if (typeof value === "string") {
+      const n = Number(value);
+      if (Number.isFinite(n)) return n;
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: paramName,
+        value,
+        hint: `Parameter "${paramName}" is ${valuetype} (numeric); value must be a number, got "${value}".`,
+      });
+    }
+    if (typeof value === "boolean") return value ? 1 : 0;
+  }
+
+  if (booleanTypes.has(valuetype)) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") {
+      if (value === "true") return true;
+      if (value === "false") return false;
+    }
+    if (typeof value === "number") return value !== 0;
+    throw new ResolumeApiError({
+      kind: "InvalidValue",
+      field: paramName,
+      value,
+      hint: `Parameter "${paramName}" is ${valuetype}; value must be true/false.`,
+    });
+  }
+
+  if (stringTypes.has(valuetype)) {
+    return String(value);
+  }
+
+  // Unknown type — pass through unchanged.
+  return value;
 }
 
 function assertIndex(what: "layer" | "column" | "clip" | "deck", n: number): void {

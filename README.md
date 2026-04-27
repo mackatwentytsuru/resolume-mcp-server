@@ -84,7 +84,7 @@ Add to `.mcp.json` in your project root:
 | `RESOLUME_PORT` | `8080` | Web Server port (8080 Arena/Avenue, 8081 Wire) |
 | `RESOLUME_TIMEOUT_MS` | `10000` | Per-request timeout in milliseconds |
 
-## Tools (v0.2.0)
+## Tools (v0.2.2)
 
 All tools are prefixed with `resolume_` to avoid collision with other MCP servers. Indices are **1-based** to match Resolume's UI.
 
@@ -121,13 +121,14 @@ All tools are prefixed with `resolume_` to avoid collision with other MCP server
 | `resolume_get_tempo` | Returns current BPM and the accepted range (typically 20..500). |
 | `resolume_set_bpm` | Sets exact BPM (e.g., for synced sets). |
 | `resolume_tap_tempo` | Sends taps to the tap-tempo controller (single tap or multi-tap with interval). |
+| `resolume_resync_tempo` | Sends a resync trigger to align Resolume's beat clock to the next downbeat. |
 
 ### Effects
 | Tool | What it does |
 |------|--------------|
 | `resolume_list_video_effects` | ~105 video effects available globally, with `idstring` + `name`. |
-| `resolume_list_layer_effects` | Effects currently attached to a layer with their parameter names. |
-| `resolume_set_effect_parameter` | Mutates any parameter on an attached effect (numbers, strings, booleans). |
+| `resolume_list_layer_effects` | Effects on a layer with full parameter metadata: type, current value, min/max, and choice options. |
+| `resolume_set_effect_parameter` | Mutates any parameter on an attached effect. Auto-coerces string-encoded numbers/booleans to match the parameter's declared type. |
 
 ## Example prompts
 
@@ -183,7 +184,7 @@ src/
 
 | Feature | This server | drohi-r | Ayesy | Tortillaguy |
 |---------|-------------|---------|-------|-------------|
-| Tool count | 17 (curated) → 30-40 planned | 206 | 44 | 2 (`search`/`execute`) |
+| Tool count | 18 (curated) → 30-40 planned | 206 | 44 | 2 (`search`/`execute`) |
 | Language | TypeScript | Python | TypeScript | Python |
 | Schema validation | Zod (strict) | Manual | Zod | None |
 | Thumbnail as image | ✅ | ❌ | ❌ | ❌ |

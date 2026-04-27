@@ -213,7 +213,7 @@ describe("ResolumeClient.listVideoEffects", () => {
 });
 
 describe("ResolumeClient.listLayerEffects", () => {
-  it("returns positioned effects with their parameter names", async () => {
+  it("returns rich parameter metadata: type, value, and range for each param", async () => {
     const { client } = buildClient({
       get: () => ({
         video: {
@@ -221,18 +221,39 @@ describe("ResolumeClient.listLayerEffects", () => {
             {
               id: 100,
               name: "Transform",
-              params: { Scale: {}, "Position X": {} },
+              params: {
+                Scale: { valuetype: "ParamRange", value: 100, min: 0, max: 1000 },
+                "Position X": { valuetype: "ParamRange", value: 0, min: -32768, max: 32768 },
+                Mode: {
+                  valuetype: "ParamChoice",
+                  value: "Linear",
+                  options: ["Linear", "Bezier"],
+                },
+              },
             },
-            { id: 101, name: "Bloom", params: { Amount: {} } },
           ],
         },
       }),
     });
     const effects = await client.listLayerEffects(1);
-    expect(effects).toEqual([
-      { id: 100, name: "Transform", params: ["Scale", "Position X"] },
-      { id: 101, name: "Bloom", params: ["Amount"] },
-    ]);
+    expect(effects).toHaveLength(1);
+    expect(effects[0].id).toBe(100);
+    const params = effects[0].params;
+    const scale = params.find((p) => p.name === "Scale");
+    expect(scale).toMatchObject({
+      name: "Scale",
+      valuetype: "ParamRange",
+      value: 100,
+      min: 0,
+      max: 1000,
+    });
+    const mode = params.find((p) => p.name === "Mode");
+    expect(mode).toMatchObject({
+      name: "Mode",
+      valuetype: "ParamChoice",
+      value: "Linear",
+      options: ["Linear", "Bezier"],
+    });
   });
 });
 
@@ -242,8 +263,8 @@ describe("ResolumeClient.setEffectParameter", () => {
       get: () => ({
         video: {
           effects: [
-            { id: 100, params: { Scale: { value: 1 } } },
-            { id: 200, params: { Scale: { value: 2 } } },
+            { id: 100, params: { Scale: { value: 1, valuetype: "ParamRange" } } },
+            { id: 200, params: { Scale: { value: 2, valuetype: "ParamRange" } } },
           ],
         },
       }),
@@ -253,6 +274,63 @@ describe("ResolumeClient.setEffectParameter", () => {
       video: {
         effects: [{}, { id: 200, params: { Scale: { value: 50 } } }],
       },
+    });
+  });
+
+  it("coerces string-formatted numbers to actual numbers for ParamRange", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Scale: { valuetype: "ParamRange" } } }],
+        },
+      }),
+    });
+    // MCP wire-encoded numbers can arrive as strings — Resolume silently
+    // rejects "175" but accepts 175.
+    await client.setEffectParameter(1, 1, "Scale", "175" as unknown as number);
+    expect(rest.put).toHaveBeenCalledWith("/composition/layers/1", {
+      video: { effects: [{ id: 1, params: { Scale: { value: 175 } } }] },
+    });
+  });
+
+  it("rejects non-numeric strings for ParamRange with a clear error", async () => {
+    const { client } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Scale: { valuetype: "ParamRange" } } }],
+        },
+      }),
+    });
+    await expect(
+      client.setEffectParameter(1, 1, "Scale", "abc")
+    ).rejects.toMatchObject({ detail: { kind: "InvalidValue", field: "Scale" } });
+  });
+
+  it("coerces 'true'/'false' strings to booleans for ParamBoolean", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Active: { valuetype: "ParamBoolean" } } }],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 1, "Active", "true" as unknown as boolean);
+    expect(rest.put).toHaveBeenCalledWith("/composition/layers/1", {
+      video: { effects: [{ id: 1, params: { Active: { value: true } } }] },
+    });
+  });
+
+  it("passes ParamChoice values through as strings", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Mode: { valuetype: "ParamChoice" } } }],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 1, "Mode", "Linear");
+    expect(rest.put).toHaveBeenCalledWith("/composition/layers/1", {
+      video: { effects: [{ id: 1, params: { Mode: { value: "Linear" } } }] },
     });
   });
 
