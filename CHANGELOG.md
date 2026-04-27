@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.3] - 2026-04-27
+
+Sprint A of the v0.5 roadmap (`docs/v0.5/99-roadmap.md`). **Pure refactor + dormant additions — zero behavior change for any consumer.** Ships as a patch so we have a clean checkpoint before the v0.5.0 feature work begins.
+
+### Refactor — per-domain client split
+
+- **`src/resolume/client.ts` 549 → 189 lines.** Effect-style module-level helpers extracted into per-domain files: `composition.ts`, `clip.ts`, `layer.ts`, `tempo.ts`. New `shared.ts` consolidates cross-domain helpers (`assertIndex`, `extractName`, `extractValue`, `filterStringOptions`) that were previously duplicated between `client.ts` and `effects.ts`.
+- **Public `ResolumeClient` API is byte-identical.** Every existing tool keeps working without edits to `src/tools/**`. The class is now a thin facade composing module-level helpers via namespace imports (`import * as clip from "./clip.js"`), matching the v0.4.2 `effects.ts` precedent.
+- **Tests reorganize by domain.** New per-domain test files (`tempo.test.ts`, `composition.test.ts`, `clip.test.ts`, `layer.test.ts`); `client.effects.test.ts` renamed to `effects.test.ts`. Version-bucket files `client.v2.test.ts` / `client.v3.test.ts` / `client.v4.test.ts` deleted; their `describe` blocks relocated to the appropriate domain test file.
+- **`client.test.ts` slimmed** to `fromConfig`, `summarizeComposition`, and a public-API surface-presence assertion (catches accidentally-dropped methods).
+
+### Added — tool-index codegen (Phase 0, dormant)
+
+- **`scripts/gen-tool-index.mjs`** — globs `src/tools/**/*.ts`, validates the `resolume_<snake_case>` naming convention, and emits two deterministic artifacts: `src/tools/index.generated.ts` (parallel `allTools` array) and `src/tools/tool-manifest.json` (sorted-by-name catalog with `name`, `file`, `symbol`, `destructive`).
+- **`src/tools/registry.ts`** — extracted `AnyTool` interface and `eraseTool()` helper from the manual `index.ts`. Future stability-tier helpers (Phase 2) will live here.
+- **`src/tools/registry.test.ts`** — 7 parity tests proving the generated registry matches the manual one (length, names, uniqueness, name pattern). Catches drift before publish.
+- **Manual `src/tools/index.ts` is still the authoritative registry** in v0.4.3. Phase 1 (a future patch) will flip `registerTools.ts` to import from the generated file. This dormant-codegen approach makes Phase 1 a one-line revertable change with zero risk.
+- **`package.json` scripts**: `gen:tools` (regenerate), `check:tools` (regenerate to memory and diff against committed file — fails on drift). Both `build` and `dev` now run `gen:tools` first; `prepublishOnly` runs `check:tools` first as a publish-time drift gate.
+- **`.githooks/pre-commit`** gains `check:tools` as the first step so stale generated files block commits with a precise error message.
+
+### Documentation — v0.5 design
+
+- **`docs/v0.5/`** — five design documents and one master roadmap totalling 1973 lines, produced by 5 parallel agents (1 prior-art survey + 4 architects):
+  - `00-prior-art.md` — survey of `Tortillaguy/resolume-mcp`, `drohi-r/resolume-mcp`, and `bitfocus/companion-module-resolume-arena`. Companion's hybrid OSC+WS state model and cached effect-param lookups inform v0.5; drohi's 3,269-line single-file flat registry is the anti-pattern this release's per-domain split moves away from.
+  - `01-composition-store.md` — push-driven state cache fed by Resolume's OSC OUT (~325 msg/s), REST seed/reconcile, three operating modes (OWNER/SHARED/OFF) for socket coexistence with `osc_subscribe`. Opt-in via `RESOLUME_CACHE`.
+  - `02-domain-client-split.md` — the spec this release's refactor implemented.
+  - `03-tool-registry.md` — phase 0 implemented in this release; phases 1-2 (stability tiers, env filter, deprecation lifecycle) ship in v0.5.0.
+  - `04-effect-cache-and-sub-endpoints.md` — TTL'd effect-id cache with single-flight, sub-endpoint catalog (3 already optimal, 3 confirmed negative per CLAUDE.md, 5 speculative needing live probe).
+  - `99-roadmap.md` — synthesis. Critical path is component 2 → (1, 3, 4 in parallel). Sprint A ships here; Sprint B as v0.5.0; Sprint C as v0.5.1; Sprint D as v1.0.0 (npm publish).
+
+### Verified
+
+243 tests pass (was 233 — net +10 from new domain tests, surface-presence assertion, and codegen parity tests). Coverage 93.95% statements / 87.01% branches / 91.62% functions / 96.09% lines — all above the 80% gate.
+
 ## [0.4.2] - 2026-04-27
 
 Hardening release from a 5-perspective code review (typescript / security / general / architect / performance reviewers run in parallel against v0.4.1). All findings actioned. No new tools, no behavior changes for existing callers — internal robustness, refactoring, and stricter validation.
