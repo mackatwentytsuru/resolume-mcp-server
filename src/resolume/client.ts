@@ -163,6 +163,85 @@ export class ResolumeClient {
     return opts.filter((o): o is string => typeof o === "string");
   }
 
+  // ---- Crossfader ----
+
+  /** Returns the crossfader phase (-1 = full A, 0 = center, 1 = full B). */
+  async getCrossfader(): Promise<{ phase: number | null }> {
+    const composition = await this.getComposition();
+    const cf = composition.crossfader as { phase?: { value?: unknown } } | undefined;
+    const v = cf?.phase?.value;
+    return { phase: typeof v === "number" ? v : null };
+  }
+
+  /** Sets the crossfader phase. -1 = side A, 0 = center, 1 = side B. */
+  async setCrossfader(phase: number): Promise<void> {
+    if (!Number.isFinite(phase) || phase < -1 || phase > 1) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "phase",
+        value: phase,
+        hint: "Crossfader phase must be a number in -1..1 (-1 = side A, 0 = center, 1 = side B).",
+      });
+    }
+    await this.rest.put("/composition", {
+      crossfader: { phase: { value: phase } },
+    });
+  }
+
+  // ---- Layer transition ----
+
+  /** Sets the layer's transition duration in seconds (0..10). 0 = instant cuts. */
+  async setLayerTransitionDuration(layer: number, durationSeconds: number): Promise<void> {
+    assertIndex("layer", layer);
+    if (!Number.isFinite(durationSeconds) || durationSeconds < 0 || durationSeconds > 10) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "durationSeconds",
+        value: durationSeconds,
+        hint: "Layer transition duration must be 0..10 seconds.",
+      });
+    }
+    await this.rest.put(`/composition/layers/${layer}`, {
+      transition: { duration: { value: durationSeconds } },
+    });
+  }
+
+  /** Returns the available transition blend modes for a layer (50+ options). */
+  async getLayerTransitionBlendModes(layer: number): Promise<string[]> {
+    assertIndex("layer", layer);
+    const raw = (await this.rest.get(`/composition/layers/${layer}`)) as {
+      transition?: { blend_mode?: { options?: unknown[] } };
+    };
+    const opts = raw?.transition?.blend_mode?.options;
+    if (!Array.isArray(opts)) return [];
+    return opts.filter((o): o is string => typeof o === "string");
+  }
+
+  /** Sets the layer's transition blend mode (the visual effect applied during clip changes). */
+  async setLayerTransitionBlendMode(layer: number, blendMode: string): Promise<void> {
+    assertIndex("layer", layer);
+    if (typeof blendMode !== "string" || blendMode.length === 0) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "blendMode",
+        value: blendMode,
+        hint: "Pre-validate against the layer's transition options. List them first if unsure.",
+      });
+    }
+    const available = await this.getLayerTransitionBlendModes(layer);
+    if (available.length > 0 && !available.includes(blendMode)) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "blendMode",
+        value: blendMode,
+        hint: `Unknown transition blend mode "${blendMode}". Available: ${available.slice(0, 10).join(", ")}${available.length > 10 ? `, ... (${available.length} total)` : ""}.`,
+      });
+    }
+    await this.rest.put(`/composition/layers/${layer}`, {
+      transition: { blend_mode: { value: blendMode } },
+    });
+  }
+
   // ---- Tempo controller ----
 
   async getTempo(): Promise<TempoState> {

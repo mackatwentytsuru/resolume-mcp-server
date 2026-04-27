@@ -84,7 +84,7 @@ Add to `.mcp.json` in your project root:
 | `RESOLUME_PORT` | `8080` | Web Server port (8080 Arena/Avenue, 8081 Wire) |
 | `RESOLUME_TIMEOUT_MS` | `10000` | Per-request timeout in milliseconds |
 
-## Tools (v0.2.3)
+## Tools (v0.2.5)
 
 All tools are prefixed with `resolume_` to avoid collision with other MCP servers. Indices are **1-based** to match Resolume's UI.
 
@@ -94,6 +94,7 @@ All tools are prefixed with `resolume_` to avoid collision with other MCP server
 | `resolume_get_composition` | Returns version, BPM, layers (with connected clip + bypass state), columns, decks. **Call first.** |
 | `resolume_get_beat_snap` | Current clip beat-snap value + available options (None, 1 Bar, 1/2 Bar, etc.). |
 | `resolume_set_beat_snap` | Sets clip beat-snap. Triggered clips wait for the next beat boundary — the core BPM-sync mechanism. |
+| `resolume_get_crossfader` / `resolume_set_crossfader` | Master A/B crossfader. -1 = full Side A, 0 = center, 1 = full Side B. |
 
 ### Clips
 | Tool | What it does |
@@ -112,6 +113,8 @@ All tools are prefixed with `resolume_` to avoid collision with other MCP server
 | `resolume_set_layer_bypass` | Mutes/unmutes a layer without losing the connected clip. |
 | `resolume_set_layer_blend_mode` | Changes layer blend mode (Add, Multiply, Screen, etc.). |
 | `resolume_list_layer_blend_modes` | Lists the 60+ blend modes available. |
+| `resolume_set_layer_transition_duration` | Per-layer transition fade duration (0..10s, 0 = instant cut). |
+| `resolume_set_layer_transition_blend_mode` / `resolume_list_layer_transition_blend_modes` | Visual transition effect (Alpha, Wipe Ellipse, Push Up, ...). 50+ options. |
 | `resolume_clear_layer` | **Destructive.** Disconnects all clips. Requires `confirm: true`. |
 
 ### Columns / Decks
@@ -189,7 +192,7 @@ src/
 
 | Feature | This server | drohi-r | Ayesy | Tortillaguy |
 |---------|-------------|---------|-------|-------------|
-| Tool count | 23 (curated) → 30-40 planned | 206 | 44 | 2 (`search`/`execute`) |
+| Tool count | 28 (curated) → 30-40 planned | 206 | 44 | 2 (`search`/`execute`) |
 | Language | TypeScript | Python | TypeScript | Python |
 | Schema validation | Zod (strict) | Manual | Zod | None |
 | Thumbnail as image | ✅ | ❌ | ❌ | ❌ |

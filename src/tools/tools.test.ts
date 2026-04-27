@@ -29,6 +29,11 @@ function buildCtx(overrides: Partial<ResolumeClient> = {}) {
     setLayerBypass: vi.fn(async () => undefined),
     setLayerBlendMode: vi.fn(async () => undefined),
     getLayerBlendModes: vi.fn(async () => ["Add", "Multiply"]),
+    setLayerTransitionDuration: vi.fn(async () => undefined),
+    setLayerTransitionBlendMode: vi.fn(async () => undefined),
+    getLayerTransitionBlendModes: vi.fn(async () => ["Alpha", "Wipe Ellipse"]),
+    getCrossfader: vi.fn(async () => ({ phase: 0 })),
+    setCrossfader: vi.fn(async () => undefined),
     setTempo: vi.fn(async () => undefined),
     tapTempo: vi.fn(async () => undefined),
     resyncTempo: vi.fn(async () => undefined),
@@ -57,8 +62,8 @@ function findTool(name: string) {
 describe("tool registry", () => {
   it("registers all v0.2 tools with unique resolume_-prefixed names", () => {
     const names = allTools.map((t) => t.name);
-    // 23 tools as of v0.2.3.
-    expect(names.length).toBe(23);
+    // 28 tools as of v0.2.5.
+    expect(names.length).toBe(28);
     for (const n of names) {
       expect(n).toMatch(/^resolume_/);
     }

@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.5] - 2026-04-27
+
+A/B mixing + per-layer transitions. 5 new tools. 28 total.
+
+### Added
+
+- **`resolume_get_crossfader` / `resolume_set_crossfader`** — master A/B crossfader phase (-1 = full Side A, 0 = center, 1 = full Side B). The standard DJ-style mix between two channels.
+- **`resolume_set_layer_transition_duration`** — per-layer fade duration (0..10s, 0 = instant cut).
+- **`resolume_set_layer_transition_blend_mode`** / **`resolume_list_layer_transition_blend_modes`** — visual effect during clip transitions (Alpha = simple fade, Wipe Ellipse = circular wipe, Push Up = scroll, etc., 50 options). Pre-validates against the live list.
+
+### Tests
+
+- 147 tests, ~97% coverage
+
 ## [0.2.4] - 2026-04-27
 
 Quality release driven by typescript-reviewer feedback. No new tools — existing ones get more correct, better-documented, and more defensively bounded.

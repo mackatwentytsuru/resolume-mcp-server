@@ -3,6 +3,15 @@ import type { ToolContext, ToolDefinition, ToolResult } from "./types.js";
 import { getCompositionTool } from "./composition/get-composition.js";
 import { getBeatSnapTool, setBeatSnapTool } from "./composition/beat-snap.js";
 import {
+  getCrossfaderTool,
+  setCrossfaderTool,
+} from "./composition/crossfader.js";
+import {
+  setLayerTransitionDurationTool,
+  setLayerTransitionBlendModeTool,
+  listLayerTransitionBlendModesTool,
+} from "./layer/transition.js";
+import {
   setClipPlayDirectionTool,
   setClipPlayModeTool,
   setClipPositionTool,
@@ -67,6 +76,8 @@ export const allTools: ReadonlyArray<AnyTool> = [
   eraseTool(getCompositionTool),
   eraseTool(getBeatSnapTool),
   eraseTool(setBeatSnapTool),
+  eraseTool(getCrossfaderTool),
+  eraseTool(setCrossfaderTool),
   // Clip operations
   eraseTool(triggerClipTool),
   eraseTool(selectClipTool),
@@ -79,6 +90,9 @@ export const allTools: ReadonlyArray<AnyTool> = [
   eraseTool(setLayerBypassTool),
   eraseTool(setLayerBlendModeTool),
   eraseTool(listLayerBlendModesTool),
+  eraseTool(setLayerTransitionDurationTool),
+  eraseTool(setLayerTransitionBlendModeTool),
+  eraseTool(listLayerTransitionBlendModesTool),
   eraseTool(clearLayerTool),
   // Column / deck
   eraseTool(triggerColumnTool),
