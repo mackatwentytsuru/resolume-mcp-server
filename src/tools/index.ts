@@ -6,6 +6,21 @@ import { selectClipTool } from "./clip/select-clip.js";
 import { getClipThumbnailTool } from "./clip/get-thumbnail.js";
 import { setLayerOpacityTool } from "./layer/set-opacity.js";
 import { clearLayerTool } from "./layer/clear-layer.js";
+import { setLayerBypassTool } from "./layer/set-bypass.js";
+import {
+  setLayerBlendModeTool,
+  listLayerBlendModesTool,
+} from "./layer/set-blend-mode.js";
+import { triggerColumnTool } from "./column/trigger-column.js";
+import { selectDeckTool } from "./deck/select-deck.js";
+import { setBpmTool } from "./tempo/set-bpm.js";
+import { tapTempoTool } from "./tempo/tap-tempo.js";
+import { getTempoTool } from "./tempo/get-tempo.js";
+import {
+  listVideoEffectsTool,
+  listLayerEffectsTool,
+} from "./effect/list-effects.js";
+import { setEffectParameterTool } from "./effect/set-effect-param.js";
 
 /**
  * Type-erased tool entry used by the registry. We cast individual tools
@@ -41,10 +56,27 @@ function eraseTool<TShape extends z.ZodRawShape>(tool: ToolDefinition<TShape>): 
 }
 
 export const allTools: ReadonlyArray<AnyTool> = [
+  // Composition / state
   eraseTool(getCompositionTool),
+  // Clip operations
   eraseTool(triggerClipTool),
   eraseTool(selectClipTool),
   eraseTool(getClipThumbnailTool),
+  // Layer operations
   eraseTool(setLayerOpacityTool),
+  eraseTool(setLayerBypassTool),
+  eraseTool(setLayerBlendModeTool),
+  eraseTool(listLayerBlendModesTool),
   eraseTool(clearLayerTool),
+  // Column / deck
+  eraseTool(triggerColumnTool),
+  eraseTool(selectDeckTool),
+  // Tempo
+  eraseTool(getTempoTool),
+  eraseTool(setBpmTool),
+  eraseTool(tapTempoTool),
+  // Effects
+  eraseTool(listVideoEffectsTool),
+  eraseTool(listLayerEffectsTool),
+  eraseTool(setEffectParameterTool),
 ];

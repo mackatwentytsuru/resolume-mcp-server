@@ -5,6 +5,8 @@ import {
   type Composition,
   type CompositionSummary,
   type ProductInfo,
+  type TempoState,
+  type EffectCatalogEntry,
 } from "./types.js";
 import { ResolumeApiError } from "../errors/types.js";
 
@@ -12,6 +14,15 @@ import { ResolumeApiError } from "../errors/types.js";
  * High-level facade over the Resolume REST API. This is the surface tools
  * call into; it adds schema validation and helpful summaries on top of the
  * raw REST client.
+ *
+ * IMPORTANT: Resolume's REST API does NOT expose parameter values at deep
+ * paths like `/composition/layers/1/video/opacity`. Instead, all parameter
+ * mutations are PUT requests to a *parent* path with the parameter nested
+ * inside the body. The convention used here:
+ *
+ *   PUT /composition                      with `{tempocontroller: {tempo: {value: 130}}}`
+ *   PUT /composition/layers/{n}           with `{video: {opacity: {value: 0.5}}}`
+ *   POST /composition/.../<action>        for action triggers (connect, select, clear)
  */
 export class ResolumeClient {
   constructor(private readonly rest: ResolumeRestClient) {}
@@ -24,6 +35,8 @@ export class ResolumeClient {
     return new ResolumeClient(rest);
   }
 
+  // ---- Composition / state ----
+
   async getComposition(): Promise<Composition> {
     const raw = await this.rest.get("/composition");
     return CompositionSchema.parse(raw);
@@ -34,7 +47,6 @@ export class ResolumeClient {
       const raw = await this.rest.get("/product");
       return ProductInfoSchema.parse(raw);
     } catch (err) {
-      // /product is recent; older Resolume versions may 404. That's not fatal.
       if (err instanceof ResolumeApiError && err.detail.kind === "NotFound") {
         return null;
       }
@@ -42,7 +54,6 @@ export class ResolumeClient {
     }
   }
 
-  /** Returns the summary view used as primary AI context. */
   async getCompositionSummary(): Promise<CompositionSummary> {
     const [composition, product] = await Promise.all([
       this.getComposition(),
@@ -51,10 +62,11 @@ export class ResolumeClient {
     return summarizeComposition(composition, product);
   }
 
+  // ---- Clip / column / deck actions ----
+
   async triggerClip(layer: number, clip: number): Promise<void> {
     assertIndex("layer", layer);
     assertIndex("clip", clip);
-    // Setting `connected` to "Connected" triggers the clip without restart.
     await this.rest.post(`/composition/layers/${layer}/clips/${clip}/connect`);
   }
 
@@ -64,10 +76,22 @@ export class ResolumeClient {
     await this.rest.post(`/composition/layers/${layer}/clips/${clip}/select`);
   }
 
+  async triggerColumn(column: number): Promise<void> {
+    assertIndex("column", column);
+    await this.rest.post(`/composition/columns/${column}/connect`);
+  }
+
+  async selectDeck(deck: number): Promise<void> {
+    assertIndex("deck", deck);
+    await this.rest.post(`/composition/decks/${deck}/select`);
+  }
+
   async clearLayer(layer: number): Promise<void> {
     assertIndex("layer", layer);
     await this.rest.post(`/composition/layers/${layer}/clear`);
   }
+
+  // ---- Layer parameters (nested PUT) ----
 
   async setLayerOpacity(layer: number, value: number): Promise<void> {
     assertIndex("layer", layer);
@@ -79,8 +103,152 @@ export class ResolumeClient {
         hint: "Opacity must be a number between 0 and 1.",
       });
     }
-    await this.rest.put(`/composition/layers/${layer}/video/opacity`, { value });
+    await this.rest.put(`/composition/layers/${layer}`, {
+      video: { opacity: { value } },
+    });
   }
+
+  async setLayerBypass(layer: number, bypassed: boolean): Promise<void> {
+    assertIndex("layer", layer);
+    await this.rest.put(`/composition/layers/${layer}`, {
+      bypassed: { value: bypassed },
+    });
+  }
+
+  async setLayerBlendMode(layer: number, blendMode: string): Promise<void> {
+    assertIndex("layer", layer);
+    if (typeof blendMode !== "string" || blendMode.length === 0) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "blendMode",
+        value: blendMode,
+        hint: "blendMode must be a non-empty string. Use resolume_get_layer_blend_modes to list options.",
+      });
+    }
+    await this.rest.put(`/composition/layers/${layer}`, {
+      video: { mixer: { "Blend Mode": { value: blendMode } } },
+    });
+  }
+
+  async getLayerBlendModes(layer: number): Promise<string[]> {
+    assertIndex("layer", layer);
+    const raw = (await this.rest.get(`/composition/layers/${layer}`)) as {
+      video?: { mixer?: { "Blend Mode"?: { options?: unknown } } };
+    };
+    const opts = raw?.video?.mixer?.["Blend Mode"]?.options;
+    if (!Array.isArray(opts)) return [];
+    return opts.filter((o): o is string => typeof o === "string");
+  }
+
+  // ---- Tempo controller ----
+
+  async getTempo(): Promise<TempoState> {
+    const composition = await this.getComposition();
+    const tc = composition.tempocontroller as
+      | { tempo?: { value?: unknown; min?: number; max?: number } }
+      | undefined;
+    const value = tc?.tempo?.value;
+    return {
+      bpm: typeof value === "number" ? value : null,
+      min: typeof tc?.tempo?.min === "number" ? tc.tempo.min : null,
+      max: typeof tc?.tempo?.max === "number" ? tc.tempo.max : null,
+    };
+  }
+
+  async setTempo(bpm: number): Promise<void> {
+    if (!Number.isFinite(bpm) || bpm < 20 || bpm > 500) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "bpm",
+        value: bpm,
+        hint: "BPM must be between 20 and 500 (Resolume's accepted range).",
+      });
+    }
+    await this.rest.put("/composition", {
+      tempocontroller: { tempo: { value: bpm } },
+    });
+  }
+
+  /** Send a single tap to the tap-tempo controller. Multiple taps in succession recalibrate Resolume's BPM. */
+  async tapTempo(): Promise<void> {
+    await this.rest.put("/composition", {
+      tempocontroller: { tempo_tap: { value: true } },
+    });
+  }
+
+  async resyncTempo(): Promise<void> {
+    await this.rest.put("/composition", {
+      tempocontroller: { resync: { value: true } },
+    });
+  }
+
+  // ---- Effects ----
+
+  async listVideoEffects(): Promise<EffectCatalogEntry[]> {
+    const raw = (await this.rest.get("/effects/video")) as unknown;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((e): e is { idstring?: string; name?: string } => typeof e === "object" && e !== null)
+      .map((e) => ({
+        idstring: typeof e.idstring === "string" ? e.idstring : "",
+        name: typeof e.name === "string" ? e.name : "",
+      }))
+      .filter((e) => e.idstring && e.name);
+  }
+
+  async listLayerEffects(
+    layer: number
+  ): Promise<Array<{ id: number; name: string; params: string[] }>> {
+    assertIndex("layer", layer);
+    const raw = (await this.rest.get(`/composition/layers/${layer}`)) as {
+      video?: { effects?: Array<{ id?: number; name?: string; params?: Record<string, unknown> }> };
+    };
+    const effects = raw?.video?.effects ?? [];
+    return effects.map((e) => ({
+      id: typeof e.id === "number" ? e.id : 0,
+      name: typeof e.name === "string" ? e.name : "",
+      params: e.params ? Object.keys(e.params) : [],
+    }));
+  }
+
+  /**
+   * Set a parameter on an existing effect attached to a layer.
+   * `effectIndex` is 1-based across `layer.video.effects`.
+   * `paramName` is the human-readable parameter name (e.g. "Scale", "Position X").
+   */
+  async setEffectParameter(
+    layer: number,
+    effectIndex: number,
+    paramName: string,
+    value: number | string | boolean
+  ): Promise<void> {
+    assertIndex("layer", layer);
+    if (!Number.isInteger(effectIndex) || effectIndex < 1) {
+      throw new ResolumeApiError({
+        kind: "InvalidIndex",
+        what: "clip", // closest existing kind; effect index isn't its own kind yet
+        index: effectIndex,
+        hint: "effectIndex is the 1-based position of the effect on the layer. Call resolume_list_layer_effects to enumerate.",
+      });
+    }
+    if (typeof paramName !== "string" || paramName.length === 0) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "paramName",
+        value: paramName,
+        hint: "paramName must match the effect's parameter name exactly (e.g. 'Scale').",
+      });
+    }
+    // Build the nested PUT body. We need to pad the effects array up to effectIndex.
+    const effects: Array<Record<string, unknown>> = [];
+    for (let i = 0; i < effectIndex - 1; i += 1) effects.push({});
+    effects.push({ params: { [paramName]: { value } } });
+    await this.rest.put(`/composition/layers/${layer}`, {
+      video: { effects },
+    });
+  }
+
+  // ---- Thumbnails ----
 
   async getClipThumbnail(
     layer: number,
@@ -113,6 +281,10 @@ export function summarizeComposition(
   const layers = composition.layers ?? [];
   const columns = composition.columns ?? [];
   const decks = composition.decks ?? [];
+  const tc = composition.tempocontroller as
+    | { tempo?: { value?: unknown } }
+    | undefined;
+  const bpmValue = tc?.tempo?.value;
 
   return {
     productVersion: product
@@ -120,6 +292,7 @@ export function summarizeComposition(
           .filter((x) => x !== undefined)
           .join(".") || null
       : null,
+    bpm: typeof bpmValue === "number" ? bpmValue : null,
     layerCount: layers.length,
     columnCount: columns.length,
     deckCount: decks.length,
@@ -131,6 +304,7 @@ export function summarizeComposition(
         name: extractName(layer.name) ?? `Layer ${idx + 1}`,
         clipCount: clips.length,
         connectedClip: connected >= 0 ? connected + 1 : null,
+        bypassed: extractValue(layer.bypassed) === true,
       };
     }),
     columns: columns.map((column, idx) => ({

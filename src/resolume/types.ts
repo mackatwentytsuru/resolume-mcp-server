@@ -83,10 +83,28 @@ export type ProductInfo = z.infer<typeof ProductInfoSchema>;
 /** Minimal projection of composition state for LLM consumption. */
 export interface CompositionSummary {
   productVersion: string | null;
+  bpm: number | null;
   layerCount: number;
   columnCount: number;
   deckCount: number;
-  layers: Array<{ index: number; name: string; clipCount: number; connectedClip: number | null }>;
+  layers: Array<{
+    index: number;
+    name: string;
+    clipCount: number;
+    connectedClip: number | null;
+    bypassed: boolean;
+  }>;
   columns: Array<{ index: number; name: string }>;
   decks: Array<{ index: number; name: string; selected: boolean }>;
+}
+
+export interface TempoState {
+  bpm: number | null;
+  min: number | null;
+  max: number | null;
+}
+
+export interface EffectCatalogEntry {
+  idstring: string;
+  name: string;
 }

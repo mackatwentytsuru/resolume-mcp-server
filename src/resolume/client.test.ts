@@ -42,12 +42,12 @@ describe("ResolumeClient.triggerClip", () => {
 });
 
 describe("ResolumeClient.setLayerOpacity", () => {
-  it("PUTs the opacity wrapper to the right endpoint", async () => {
+  it("PUTs the opacity wrapper to the layer endpoint with nested body", async () => {
     const { client, rest } = buildClient();
     await client.setLayerOpacity(3, 0.75);
     expect(rest.put).toHaveBeenCalledWith(
-      "/composition/layers/3/video/opacity",
-      { value: 0.75 }
+      "/composition/layers/3",
+      { video: { opacity: { value: 0.75 } } }
     );
   });
 
@@ -167,12 +167,13 @@ describe("summarizeComposition", () => {
 
     expect(summary).toEqual({
       productVersion: "7.18.0",
+      bpm: null,
       layerCount: 2,
       columnCount: 2,
       deckCount: 1,
       layers: [
-        { index: 1, name: "BG", clipCount: 2, connectedClip: 2 },
-        { index: 2, name: "Layer 2", clipCount: 0, connectedClip: null },
+        { index: 1, name: "BG", clipCount: 2, connectedClip: 2, bypassed: false },
+        { index: 2, name: "Layer 2", clipCount: 0, connectedClip: null, bypassed: false },
       ],
       columns: [
         { index: 1, name: "Verse" },
@@ -185,5 +186,31 @@ describe("summarizeComposition", () => {
   it("handles missing product info", () => {
     const summary = summarizeComposition({ layers: [], columns: [], decks: [] }, null);
     expect(summary.productVersion).toBeNull();
+    expect(summary.bpm).toBeNull();
+  });
+
+  it("surfaces tempocontroller BPM when present", () => {
+    const summary = summarizeComposition(
+      {
+        layers: [],
+        columns: [],
+        decks: [],
+        tempocontroller: { tempo: { value: 128 } },
+      },
+      null
+    );
+    expect(summary.bpm).toBe(128);
+  });
+
+  it("reflects layer bypass state", () => {
+    const summary = summarizeComposition(
+      {
+        layers: [{ name: { value: "muted" }, bypassed: { value: true }, clips: [] }],
+        columns: [],
+        decks: [],
+      },
+      null
+    );
+    expect(summary.layers[0].bypassed).toBe(true);
   });
 });

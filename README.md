@@ -84,20 +84,50 @@ Add to `.mcp.json` in your project root:
 | `RESOLUME_PORT` | `8080` | Web Server port (8080 Arena/Avenue, 8081 Wire) |
 | `RESOLUME_TIMEOUT_MS` | `10000` | Per-request timeout in milliseconds |
 
-## Tools (v0.1.0)
+## Tools (v0.2.0)
 
-All tools are prefixed with `resolume_` to avoid collision with other MCP servers.
+All tools are prefixed with `resolume_` to avoid collision with other MCP servers. Indices are **1-based** to match Resolume's UI.
 
+### Composition
 | Tool | What it does |
 |------|--------------|
-| `resolume_get_composition` | Returns version, layers (with connected clip), columns, decks. **Call first.** |
+| `resolume_get_composition` | Returns version, BPM, layers (with connected clip + bypass state), columns, decks. **Call first.** |
+
+### Clips
+| Tool | What it does |
+|------|--------------|
 | `resolume_trigger_clip` | Plays the clip at `{layer, clip}` — the most common VJ action. |
 | `resolume_select_clip` | Selects without playing. Useful before adjusting parameters. |
 | `resolume_get_clip_thumbnail` | Returns the clip's preview image inline so the LLM can see it. |
-| `resolume_set_layer_opacity` | Fades a layer (`opacity` in 0..1). Smooth fades = multiple small steps. |
-| `resolume_clear_layer` | **Destructive.** Disconnects all clips on a layer. Requires `confirm: true`. |
 
-> All indices are **1-based** to match Resolume's UI.
+### Layers
+| Tool | What it does |
+|------|--------------|
+| `resolume_set_layer_opacity` | Fades a layer (`opacity` in 0..1). Smooth fades = multiple small steps. |
+| `resolume_set_layer_bypass` | Mutes/unmutes a layer without losing the connected clip. |
+| `resolume_set_layer_blend_mode` | Changes layer blend mode (Add, Multiply, Screen, etc.). |
+| `resolume_list_layer_blend_modes` | Lists the 60+ blend modes available. |
+| `resolume_clear_layer` | **Destructive.** Disconnects all clips. Requires `confirm: true`. |
+
+### Columns / Decks
+| Tool | What it does |
+|------|--------------|
+| `resolume_trigger_column` | Fires every clip in a column simultaneously — standard scene change. |
+| `resolume_select_deck` | Switches deck (scene bank). |
+
+### Tempo
+| Tool | What it does |
+|------|--------------|
+| `resolume_get_tempo` | Returns current BPM and the accepted range (typically 20..500). |
+| `resolume_set_bpm` | Sets exact BPM (e.g., for synced sets). |
+| `resolume_tap_tempo` | Sends taps to the tap-tempo controller (single tap or multi-tap with interval). |
+
+### Effects
+| Tool | What it does |
+|------|--------------|
+| `resolume_list_video_effects` | ~105 video effects available globally, with `idstring` + `name`. |
+| `resolume_list_layer_effects` | Effects currently attached to a layer with their parameter names. |
+| `resolume_set_effect_parameter` | Mutates any parameter on an attached effect (numbers, strings, booleans). |
 
 ## Example prompts
 
@@ -113,8 +143,8 @@ All tools are prefixed with `resolume_` to avoid collision with other MCP server
 
 ## Roadmap
 
-- **v0.2** — WebSocket subscriptions + state cache, BPM/tap tempo, deck selection, blend mode
-- **v0.3** — Effects (add/remove/parameter), source enumeration
+- ~~**v0.2** — Tempo, deck, blend mode, effects (set parameters)~~ ✅ shipped
+- **v0.3** — WebSocket subscriptions + state cache, add/remove effects (POST `/effects`)
 - **v0.4** — `resolume_rest` whitelisted escape hatch for power users
 - **v0.5** — Advanced Output (screens, slices)
 
@@ -153,7 +183,7 @@ src/
 
 | Feature | This server | drohi-r | Ayesy | Tortillaguy |
 |---------|-------------|---------|-------|-------------|
-| Tool count | 6 (curated) → 30-40 planned | 206 | 44 | 2 (`search`/`execute`) |
+| Tool count | 17 (curated) → 30-40 planned | 206 | 44 | 2 (`search`/`execute`) |
 | Language | TypeScript | Python | TypeScript | Python |
 | Schema validation | Zod (strict) | Manual | Zod | None |
 | Thumbnail as image | ✅ | ❌ | ❌ | ❌ |

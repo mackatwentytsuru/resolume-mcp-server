@@ -7,17 +7,29 @@ function buildCtx(overrides: Partial<ResolumeClient> = {}) {
   const client = {
     getCompositionSummary: vi.fn(async () => ({
       productVersion: "7.20.0",
+      bpm: 128,
       layerCount: 1,
       columnCount: 1,
       deckCount: 0,
-      layers: [{ index: 1, name: "L1", clipCount: 1, connectedClip: null }],
+      layers: [{ index: 1, name: "L1", clipCount: 1, connectedClip: null, bypassed: false }],
       columns: [{ index: 1, name: "C1" }],
       decks: [],
     })),
     triggerClip: vi.fn(async () => undefined),
     selectClip: vi.fn(async () => undefined),
+    triggerColumn: vi.fn(async () => undefined),
+    selectDeck: vi.fn(async () => undefined),
     clearLayer: vi.fn(async () => undefined),
     setLayerOpacity: vi.fn(async () => undefined),
+    setLayerBypass: vi.fn(async () => undefined),
+    setLayerBlendMode: vi.fn(async () => undefined),
+    getLayerBlendModes: vi.fn(async () => ["Add", "Multiply"]),
+    setTempo: vi.fn(async () => undefined),
+    tapTempo: vi.fn(async () => undefined),
+    getTempo: vi.fn(async () => ({ bpm: 128, min: 20, max: 500 })),
+    listVideoEffects: vi.fn(async () => [{ idstring: "A101", name: "Add Subtract" }]),
+    listLayerEffects: vi.fn(async () => [{ id: 1, name: "Transform", params: ["Scale"] }]),
+    setEffectParameter: vi.fn(async () => undefined),
     getClipThumbnail: vi.fn(async () => ({ base64: "AAAA", mediaType: "image/png" })),
     ...overrides,
   } as unknown as ResolumeClient;
@@ -31,17 +43,31 @@ function findTool(name: string) {
 }
 
 describe("tool registry", () => {
-  it("registers all 6 MVP tools with unique resolume_-prefixed names", () => {
+  it("registers all v0.2 tools with unique resolume_-prefixed names", () => {
     const names = allTools.map((t) => t.name);
-    expect(names).toEqual([
+    // 17 tools as of v0.2.
+    expect(names.length).toBe(17);
+    for (const n of names) {
+      expect(n).toMatch(/^resolume_/);
+    }
+    expect(new Set(names).size).toBe(names.length);
+    // Spot-check core tools are present.
+    const expectedCore = [
       "resolume_get_composition",
       "resolume_trigger_clip",
-      "resolume_select_clip",
-      "resolume_get_clip_thumbnail",
       "resolume_set_layer_opacity",
-      "resolume_clear_layer",
-    ]);
-    expect(new Set(names).size).toBe(names.length);
+      "resolume_set_bpm",
+      "resolume_tap_tempo",
+      "resolume_trigger_column",
+      "resolume_select_deck",
+      "resolume_set_layer_bypass",
+      "resolume_set_layer_blend_mode",
+      "resolume_list_video_effects",
+      "resolume_set_effect_parameter",
+    ];
+    for (const expected of expectedCore) {
+      expect(names).toContain(expected);
+    }
   });
 
   it("every tool has a non-empty description over 40 chars (LLM context)", () => {
