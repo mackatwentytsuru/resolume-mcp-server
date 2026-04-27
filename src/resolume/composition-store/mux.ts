@@ -70,7 +70,17 @@ export class SubscriptionMux {
    */
   dispatch(msg: ReceivedOscMessage): void {
     if (this.subscriptions.size === 0) return;
-    for (const sub of this.subscriptions) {
+    // Snapshot the subscription set before iterating. A handler may
+    // unsubscribe a *sibling* (not yet visited) during dispatch — `Set`
+    // iteration would silently skip that sibling, dropping the message
+    // from a still-active subscription. Materialising once per dispatch
+    // costs one allocation but keeps the contract intact.
+    const subs = Array.from(this.subscriptions);
+    for (const sub of subs) {
+      // No `subscriptions.has(sub)` check on purpose: an in-flight dispatch
+      // delivers to every subscriber that was registered when dispatch began,
+      // matching standard pub/sub semantics ("events in flight aren't
+      // cancellable"). The unsubscribe takes effect on the *next* dispatch.
       if (!sub.regex.test(msg.address)) continue;
       try {
         sub.handler(msg);

@@ -58,6 +58,11 @@ export async function clearClip(
 ): Promise<void> {
   assertIndex("layer", layer);
   assertIndex("clip", clip);
+  // DO NOT invalidate the effect-id cache here. Clearing a single clip slot
+  // empties the slot's *media* but does not touch the layer's effect chain;
+  // effect ids on this layer remain stable. (Mirrors the `clearLayer`
+  // convention in `layer.ts`. Bulk wipes go through `wipeComposition` which
+  // invalidates conservatively.)
   await rest.post(`/composition/layers/${layer}/clips/${clip}/clear`);
 }
 

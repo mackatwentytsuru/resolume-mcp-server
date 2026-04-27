@@ -220,21 +220,19 @@ export function applyFullSeed(
   const deckNames: (string | null)[] = decks.map((d) => nameValue(d.name));
 
   const tempoParam = paramAt(parsed.tempocontroller, "tempo");
+  // Gate `min`/`max` on the param block's existence, not on `value`.
+  // Mid-startup Resolume can return a tempocontroller whose tempo `value`
+  // is null while `min`/`max` are already populated; the previous gate
+  // dropped them. (Review M5.)
   const tempo: CachedTempo = {
     bpm: { value: numberOrNull(tempoParam), source: seedSource },
     bpmNormalized: prev.tempo.bpmNormalized, // OSC-only — preserve last OSC if any
     min: {
-      value:
-        typeof tempoParam?.value === "number"
-          ? readNumber(tempoParam, "min") ?? null
-          : null,
+      value: tempoParam ? readNumber(tempoParam, "min") ?? null : null,
       source: seedSource,
     },
     max: {
-      value:
-        typeof tempoParam?.value === "number"
-          ? readNumber(tempoParam, "max") ?? null
-          : null,
+      value: tempoParam ? readNumber(tempoParam, "max") ?? null : null,
       source: seedSource,
     },
   };

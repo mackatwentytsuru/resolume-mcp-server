@@ -117,6 +117,38 @@ describe("SubscriptionMux", () => {
     expect(h1).toHaveBeenCalledOnce();
     expect(h2).toHaveBeenCalledOnce();
   });
+
+  // Regression for v0.5.0 review H2: a handler that unsubscribes a sibling
+  // mid-dispatch must not cause that sibling to silently miss the current
+  // message. Live `Set` iteration would skip not-yet-visited entries on
+  // concurrent removal; the fix is to snapshot before iterating.
+  it("delivers to a sibling even when an earlier handler unsubscribes it mid-dispatch", () => {
+    const h2 = vi.fn();
+    let unsubH2: (() => void) | null = null;
+    mux.subscribe("/a", () => {
+      unsubH2?.();
+    });
+    unsubH2 = mux.subscribe("/a", h2);
+    mux.dispatch(msg("/a"));
+    expect(h2).toHaveBeenCalledOnce();
+    // Subsequent dispatches respect the unsubscribe — sibling is gone.
+    mux.dispatch(msg("/a"));
+    expect(h2).toHaveBeenCalledOnce();
+  });
+
+  it("a handler that unsubscribes itself does not break dispatch for siblings", () => {
+    const order: string[] = [];
+    let unsubA: (() => void) | null = null;
+    unsubA = mux.subscribe("/x", () => {
+      order.push("a");
+      unsubA?.();
+    });
+    mux.subscribe("/x", () => order.push("b"));
+    mux.dispatch(msg("/x"));
+    expect(order).toEqual(["a", "b"]);
+    mux.dispatch(msg("/x"));
+    expect(order).toEqual(["a", "b", "b"]);
+  });
 });
 
 describe("SubscriptionMux.collect", () => {
