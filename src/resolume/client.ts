@@ -10,6 +10,7 @@ import { ResolumeApiError } from "../errors/types.js";
 import { assertIndex } from "./shared.js";
 import * as composition from "./composition.js";
 import * as effects from "./effects.js";
+import * as layer from "./layer.js";
 import * as tempo from "./tempo.js";
 
 export { summarizeComposition } from "./composition.js";
@@ -87,9 +88,8 @@ export class ResolumeClient {
   }
 
   /** Disconnects all clips on the layer (layer goes black). */
-  async clearLayer(layer: number): Promise<void> {
-    assertIndex("layer", layer);
-    await this.rest.post(`/composition/layers/${layer}/clear`);
+  async clearLayer(l: number): Promise<void> {
+    return layer.clearLayer(this.rest, l);
   }
 
   /**
@@ -126,68 +126,26 @@ export class ResolumeClient {
     return { layers: layers.length, slotsCleared: cleared };
   }
 
-  // ---- Layer parameters (nested PUT) ----
+  // ---- Layer parameters (implementations in ./layer.ts) ----
 
   /** Master opacity in 0..1. */
-  async setLayerOpacity(layer: number, value: number): Promise<void> {
-    assertIndex("layer", layer);
-    if (value < 0 || value > 1 || Number.isNaN(value)) {
-      throw new ResolumeApiError({
-        kind: "InvalidValue",
-        field: "opacity",
-        value,
-        hint: "Opacity must be a number between 0 and 1.",
-      });
-    }
-    await this.rest.put(`/composition/layers/${layer}`, {
-      video: { opacity: { value } },
-    });
+  async setLayerOpacity(l: number, value: number): Promise<void> {
+    return layer.setLayerOpacity(this.rest, l, value);
   }
 
   /** Mute/unmute the layer (skips rendering when bypassed). */
-  async setLayerBypass(layer: number, bypassed: boolean): Promise<void> {
-    assertIndex("layer", layer);
-    await this.rest.put(`/composition/layers/${layer}`, {
-      bypassed: { value: bypassed },
-    });
+  async setLayerBypass(l: number, bypassed: boolean): Promise<void> {
+    return layer.setLayerBypass(this.rest, l, bypassed);
   }
 
   /** Layer blend mode (Add, Multiply, Screen, etc.). Pre-validates against live options. */
-  async setLayerBlendMode(layer: number, blendMode: string): Promise<void> {
-    assertIndex("layer", layer);
-    if (typeof blendMode !== "string" || blendMode.length === 0) {
-      throw new ResolumeApiError({
-        kind: "InvalidValue",
-        field: "blendMode",
-        value: blendMode,
-        hint: "blendMode must be a non-empty string. Use resolume_list_layer_blend_modes to enumerate options.",
-      });
-    }
-    // Resolume silently no-ops if you PUT an unknown blend mode name. Validate
-    // against the layer's available options first so the LLM gets a useful error.
-    const available = await this.getLayerBlendModes(layer);
-    if (available.length > 0 && !available.includes(blendMode)) {
-      throw new ResolumeApiError({
-        kind: "InvalidValue",
-        field: "blendMode",
-        value: blendMode,
-        hint: `Unknown blend mode "${blendMode}". Available: ${available.slice(0, 10).join(", ")}${available.length > 10 ? `, ... (${available.length} total)` : ""}.`,
-      });
-    }
-    await this.rest.put(`/composition/layers/${layer}`, {
-      video: { mixer: { "Blend Mode": { value: blendMode } } },
-    });
+  async setLayerBlendMode(l: number, blendMode: string): Promise<void> {
+    return layer.setLayerBlendMode(this.rest, l, blendMode);
   }
 
   /** Returns the list of available blend mode names for the layer. */
-  async getLayerBlendModes(layer: number): Promise<string[]> {
-    assertIndex("layer", layer);
-    const raw = (await this.rest.get(`/composition/layers/${layer}`)) as {
-      video?: { mixer?: { "Blend Mode"?: { options?: unknown } } };
-    };
-    const opts = raw?.video?.mixer?.["Blend Mode"]?.options;
-    if (!Array.isArray(opts)) return [];
-    return opts.filter((o): o is string => typeof o === "string");
+  async getLayerBlendModes(l: number): Promise<string[]> {
+    return layer.getLayerBlendModes(this.rest, l);
   }
 
   // ---- Crossfader (implementations in ./composition.ts) ----
@@ -202,58 +160,21 @@ export class ResolumeClient {
     return composition.setCrossfader(this.rest, phase);
   }
 
-  // ---- Layer transition ----
+  // ---- Layer transition (implementations in ./layer.ts) ----
 
   /** Sets the layer's transition duration in seconds (0..10). 0 = instant cuts. */
-  async setLayerTransitionDuration(layer: number, durationSeconds: number): Promise<void> {
-    assertIndex("layer", layer);
-    if (!Number.isFinite(durationSeconds) || durationSeconds < 0 || durationSeconds > 10) {
-      throw new ResolumeApiError({
-        kind: "InvalidValue",
-        field: "durationSeconds",
-        value: durationSeconds,
-        hint: "Layer transition duration must be 0..10 seconds.",
-      });
-    }
-    await this.rest.put(`/composition/layers/${layer}`, {
-      transition: { duration: { value: durationSeconds } },
-    });
+  async setLayerTransitionDuration(l: number, durationSeconds: number): Promise<void> {
+    return layer.setLayerTransitionDuration(this.rest, l, durationSeconds);
   }
 
   /** Returns the available transition blend modes for a layer (50+ options). */
-  async getLayerTransitionBlendModes(layer: number): Promise<string[]> {
-    assertIndex("layer", layer);
-    const raw = (await this.rest.get(`/composition/layers/${layer}`)) as {
-      transition?: { blend_mode?: { options?: unknown[] } };
-    };
-    const opts = raw?.transition?.blend_mode?.options;
-    if (!Array.isArray(opts)) return [];
-    return opts.filter((o): o is string => typeof o === "string");
+  async getLayerTransitionBlendModes(l: number): Promise<string[]> {
+    return layer.getLayerTransitionBlendModes(this.rest, l);
   }
 
   /** Sets the layer's transition blend mode (the visual effect applied during clip changes). */
-  async setLayerTransitionBlendMode(layer: number, blendMode: string): Promise<void> {
-    assertIndex("layer", layer);
-    if (typeof blendMode !== "string" || blendMode.length === 0) {
-      throw new ResolumeApiError({
-        kind: "InvalidValue",
-        field: "blendMode",
-        value: blendMode,
-        hint: "Pre-validate against the layer's transition options. List them first if unsure.",
-      });
-    }
-    const available = await this.getLayerTransitionBlendModes(layer);
-    if (available.length > 0 && !available.includes(blendMode)) {
-      throw new ResolumeApiError({
-        kind: "InvalidValue",
-        field: "blendMode",
-        value: blendMode,
-        hint: `Unknown transition blend mode "${blendMode}". Available: ${available.slice(0, 10).join(", ")}${available.length > 10 ? `, ... (${available.length} total)` : ""}.`,
-      });
-    }
-    await this.rest.put(`/composition/layers/${layer}`, {
-      transition: { blend_mode: { value: blendMode } },
-    });
+  async setLayerTransitionBlendMode(l: number, blendMode: string): Promise<void> {
+    return layer.setLayerTransitionBlendMode(this.rest, l, blendMode);
   }
 
   // ---- Tempo controller (implementations in ./tempo.ts) ----

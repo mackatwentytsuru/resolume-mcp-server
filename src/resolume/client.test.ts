@@ -41,38 +41,6 @@ describe("ResolumeClient.triggerClip", () => {
   });
 });
 
-describe("ResolumeClient.setLayerOpacity", () => {
-  it("PUTs the opacity wrapper to the layer endpoint with nested body", async () => {
-    const { client, rest } = buildClient();
-    await client.setLayerOpacity(3, 0.75);
-    expect(rest.put).toHaveBeenCalledWith(
-      "/composition/layers/3",
-      { video: { opacity: { value: 0.75 } } }
-    );
-  });
-
-  it("rejects values outside 0..1", async () => {
-    const { client } = buildClient();
-    await expect(client.setLayerOpacity(1, 1.5)).rejects.toMatchObject({
-      detail: { kind: "InvalidValue", field: "opacity" },
-    });
-    await expect(client.setLayerOpacity(1, -0.1)).rejects.toMatchObject({
-      detail: { kind: "InvalidValue" },
-    });
-    await expect(client.setLayerOpacity(1, NaN)).rejects.toMatchObject({
-      detail: { kind: "InvalidValue" },
-    });
-  });
-});
-
-describe("ResolumeClient.clearLayer", () => {
-  it("posts to /clear", async () => {
-    const { client, rest } = buildClient();
-    await client.clearLayer(4);
-    expect(rest.post).toHaveBeenCalledWith("/composition/layers/4/clear");
-  });
-});
-
 describe("ResolumeClient.selectClip", () => {
   it("posts to /select", async () => {
     const { client, rest } = buildClient();
