@@ -21,16 +21,18 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsc && node -e \"require('fs').chmodSync('build/index.js', 0o755)\"",
+    "gen:tools": "node scripts/gen-tool-index.mjs",
+    "check:tools": "node scripts/gen-tool-index.mjs --check",
+    "build": "npm run gen:tools && tsc && node -e \"require('fs').chmodSync('build/index.js', 0o755)\"",
     "start": "node build/index.js",
-    "dev": "tsc --watch",
+    "dev": "npm run gen:tools && tsc --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "check:skill-sync": "node scripts/check-skill-sync.mjs",
     "setup-hooks": "git config core.hooksPath .githooks",
     "prepare": "node scripts/setup-hooks.mjs",
-    "prepublishOnly": "npm run build && npm test && npm run check:skill-sync"
+    "prepublishOnly": "npm run check:tools && npm run build && npm test && npm run check:skill-sync"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
