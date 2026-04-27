@@ -36,6 +36,12 @@ function main() {
     const insideWorkTree = run("git rev-parse --is-inside-work-tree");
     if (insideWorkTree !== "true") return;
 
+    // Ensure we are running from the repo root, not from a consumer's node_modules.
+    // When installed as a dependency, repoRoot points inside node_modules and the
+    // git root will be the consumer's repo — skip hook installation in that case.
+    const gitRoot = run("git rev-parse --show-toplevel");
+    if (gitRoot !== repoRoot) return;
+
     if (!existsSync(hooksDir)) {
       // Repo was checked out without the .githooks dir (shouldn't happen, but
       // bail safely if it does).
