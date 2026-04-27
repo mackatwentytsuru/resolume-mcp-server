@@ -112,6 +112,43 @@ describe("ResolumeRestClient.post", () => {
   });
 });
 
+describe("ResolumeRestClient.postText", () => {
+  it("sends a raw string body with text/plain content-type (no JSON encoding)", async () => {
+    const fetchImpl = makeFetch(() => new Response(null, { status: 204 }));
+    const client = new ResolumeRestClient({ ...baseConfig, fetchImpl });
+    await client.postText(
+      "/composition/layers/2/effects/video/add",
+      "effect:///video/Blur"
+    );
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:8080/api/v1/composition/layers/2/effects/video/add",
+      expect.objectContaining({
+        method: "POST",
+        body: "effect:///video/Blur", // not JSON.stringify'd
+        headers: { "content-type": "text/plain" },
+      })
+    );
+  });
+
+  it("returns undefined on 204 ack", async () => {
+    const fetchImpl = makeFetch(() => new Response(null, { status: 204 }));
+    const client = new ResolumeRestClient({ ...baseConfig, fetchImpl });
+    expect(
+      await client.postText("/composition/layers/1/effects/video/add", "effect:///video/Blur")
+    ).toBeUndefined();
+  });
+
+  it("propagates 404 (e.g. when /add suffix is missing) as NotFound", async () => {
+    const fetchImpl = makeFetch(
+      () => new Response("not found", { status: 404, headers: { "content-type": "text/plain" } })
+    );
+    const client = new ResolumeRestClient({ ...baseConfig, fetchImpl });
+    await expect(
+      client.postText("/composition/layers/99/effects/video/add", "effect:///video/Blur")
+    ).rejects.toMatchObject({ detail: { kind: "NotFound" } });
+  });
+});
+
 describe("ResolumeRestClient.delete", () => {
   it("issues a DELETE without body", async () => {
     const fetchImpl = makeFetch(() => new Response(null, { status: 204 }));

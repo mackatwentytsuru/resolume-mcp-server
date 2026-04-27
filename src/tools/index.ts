@@ -38,6 +38,8 @@ import {
   listLayerEffectsTool,
 } from "./effect/list-effects.js";
 import { setEffectParameterTool } from "./effect/set-effect-param.js";
+import { addEffectToLayerTool } from "./effect/add-effect.js";
+import { removeEffectFromLayerTool } from "./effect/remove-effect.js";
 
 /**
  * Type-erased tool entry used by the registry. We cast individual tools
@@ -109,4 +111,6 @@ export const allTools: ReadonlyArray<AnyTool> = [
   eraseTool(listVideoEffectsTool),
   eraseTool(listLayerEffectsTool),
   eraseTool(setEffectParameterTool),
+  eraseTool(addEffectToLayerTool),
+  eraseTool(removeEffectFromLayerTool),
 ];

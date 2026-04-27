@@ -47,6 +47,16 @@ export class ResolumeRestClient {
     return this.request<T>("POST", path, body);
   }
 
+  /**
+   * POST a plain-text body. Resolume's effect-add endpoint
+   * (`/composition/.../effects/{kind}/add`) requires the body to be a raw URI
+   * string like `effect:///video/Blur` with `Content-Type: text/plain`. JSON
+   * encoding of the same string is silently rejected with a 204 no-op.
+   */
+  async postText<T = unknown>(path: string, text: string): Promise<T> {
+    return this.request<T>("POST", path, text, { contentType: "text/plain" });
+  }
+
   async delete<T = unknown>(path: string): Promise<T> {
     return this.request<T>("DELETE", path);
   }
@@ -93,16 +103,32 @@ export class ResolumeRestClient {
     return `${this.baseApi}${normalized}`;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    opts?: { contentType?: string }
+  ): Promise<T> {
     const url = this.url(path);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), this.config.timeoutMs);
     try {
+      const isText = opts?.contentType === "text/plain";
+      const headers: Record<string, string> | undefined =
+        body !== undefined
+          ? { "content-type": opts?.contentType ?? "application/json" }
+          : undefined;
+      const encodedBody: BodyInit | undefined =
+        body === undefined
+          ? undefined
+          : isText
+            ? String(body)
+            : JSON.stringify(body);
       const init: RequestInit = {
         method,
         signal: ctrl.signal,
-        headers: body !== undefined ? { "content-type": "application/json" } : undefined,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
+        headers,
+        body: encodedBody,
       };
       const res = await this.fetchImpl(url, init);
       if (!res.ok) {

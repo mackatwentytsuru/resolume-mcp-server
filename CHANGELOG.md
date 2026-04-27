@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2026-04-27
+
+Unblocks the v0.3 effect-management surface. Adding effects to a layer over Resolume's REST API was previously thought to require WebSocket plumbing because `POST /composition/layers/{n}/effects` returned 404. Turns out the missing piece was the `/add` suffix and a plain-text body containing the drag-drop URI (not JSON, not the `idstring`).
+
+### Added (2 new tools, 32 total)
+
+- **`resolume_add_effect_to_layer`** — adds a video effect by name (e.g. `"Blur"`, `"Hue Rotate"`) to the end of a layer's effect chain. Endpoint: `POST /composition/layers/{n}/effects/video/add` with `Content-Type: text/plain` and body `effect:///video/{EffectName}`. Verified against Resolume Arena 7.23.
+- **`resolume_remove_effect_from_layer`** — removes the effect at a given 1-based position. Internally translates to 0-based for Resolume's `DELETE /composition/layers/{n}/effects/video/{index}`. Destructive — requires `confirm: true`.
+
+Also adds `ResolumeClient.addEffectToLayer`, `ResolumeClient.removeEffectFromLayer`, and `ResolumeRestClient.postText` for direct programmatic use.
+
+### Verified live
+
+Smoke-tested against the user's running Arena 7.23.2: added Blur to layer 2, confirmed via `listLayerEffects`, removed it, confirmed cleanup. Layer state fully restored — no residual effects, no disturbance to the user's session.
+
+### Reference implementations cross-checked
+
+- `Tortillaguy/resolume-mcp` (Python, by-id path)
+- `drohi-r/resolume-mcp` (Python, positional path)
+- `Ayesy/resolume-mcp` (TypeScript, positional path)
+
+All three use the same drag-drop URI shape (`effect:///video/{Name}`). The earlier WebSocket experiments (`{action:"add", path:..., value:{idstring}}`) are not the right protocol — `idstring` is for the catalog endpoint only.
+
 ## [0.2.7] - 2026-04-27
 
 Discovered while a user wanted to wipe a deck — `clear_layer` only disconnects, it doesn't empty the clip slots themselves. Added the missing tools.

@@ -49,6 +49,8 @@ function buildCtx(overrides: Partial<ResolumeClient> = {}) {
       },
     ]),
     setEffectParameter: vi.fn(async () => undefined),
+    addEffectToLayer: vi.fn(async () => undefined),
+    removeEffectFromLayer: vi.fn(async () => undefined),
     getClipThumbnail: vi.fn(async () => ({ base64: "AAAA", mediaType: "image/png" })),
     ...overrides,
   } as unknown as ResolumeClient;
@@ -64,8 +66,8 @@ function findTool(name: string) {
 describe("tool registry", () => {
   it("registers all v0.2 tools with unique resolume_-prefixed names", () => {
     const names = allTools.map((t) => t.name);
-    // 30 tools as of v0.2.7.
-    expect(names.length).toBe(30);
+    // 32 tools as of v0.3 (added resolume_add_effect_to_layer + resolume_remove_effect_from_layer).
+    expect(names.length).toBe(32);
     for (const n of names) {
       expect(n).toMatch(/^resolume_/);
     }
@@ -83,6 +85,8 @@ describe("tool registry", () => {
       "resolume_set_layer_blend_mode",
       "resolume_list_video_effects",
       "resolume_set_effect_parameter",
+      "resolume_add_effect_to_layer",
+      "resolume_remove_effect_from_layer",
     ];
     for (const expected of expectedCore) {
       expect(names).toContain(expected);

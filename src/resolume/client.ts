@@ -491,6 +491,68 @@ export class ResolumeClient {
     });
   }
 
+  /**
+   * Adds a video effect to a layer. The body Resolume expects is a *drag-drop
+   * URI string* of the form `effect:///video/{EffectName}` — not JSON, not the
+   * effect's `idstring`. The endpoint is `POST /composition/layers/{N}/effects/video/add`
+   * with `Content-Type: text/plain`. Resolume returns 204 on success.
+   *
+   * `effectName` is the human-readable name (e.g. `"Blur"`, `"Hue Rotate"`) as
+   * reported by the `/effects/video` catalog. Spaces are URL-safe in the URI
+   * Resolume parses, so we leave them as-is.
+   */
+  async addEffectToLayer(layer: number, effectName: string): Promise<void> {
+    assertIndex("layer", layer);
+    if (typeof effectName !== "string" || effectName.trim().length === 0) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "effectName",
+        value: effectName,
+        hint: 'effectName must be a non-empty string like "Blur" or "Hue Rotate". Use resolume_list_video_effects to enumerate.',
+      });
+    }
+    const trimmed = effectName.trim();
+    await this.rest.postText(
+      `/composition/layers/${layer}/effects/video/add`,
+      `effect:///video/${trimmed}`
+    );
+  }
+
+  /**
+   * Removes a video effect from a layer by its 1-based position. Resolume's
+   * REST DELETE endpoint uses 0-based array indices, but we keep the public
+   * API 1-based to stay consistent with the rest of the tool surface.
+   *
+   * Note: removing the built-in `Transform` effect (always at index 1) is
+   * generally a bad idea — Resolume usually pre-installs it. We surface the
+   * user's choice to them rather than blocking it.
+   */
+  async removeEffectFromLayer(layer: number, effectIndex: number): Promise<void> {
+    assertIndex("layer", layer);
+    if (!Number.isInteger(effectIndex) || effectIndex < 1) {
+      throw new ResolumeApiError({
+        kind: "InvalidIndex",
+        what: "effect",
+        index: effectIndex,
+        hint: "effectIndex is the 1-based position of the effect on the layer. Call resolume_list_layer_effects first.",
+      });
+    }
+    // Verify the index exists so we return a structured error instead of a 404.
+    const existing = await this.listLayerEffects(layer);
+    if (effectIndex > existing.length) {
+      throw new ResolumeApiError({
+        kind: "InvalidIndex",
+        what: "effect",
+        index: effectIndex,
+        hint: `Layer ${layer} has only ${existing.length} effect(s). Call resolume_list_layer_effects to enumerate.`,
+      });
+    }
+    const zeroBased = effectIndex - 1;
+    await this.rest.delete(
+      `/composition/layers/${layer}/effects/video/${zeroBased}`
+    );
+  }
+
   // ---- Composition-level beat snap / trigger style ----
 
   async getBeatSnap(): Promise<{ value: string | null; options: string[] }> {
