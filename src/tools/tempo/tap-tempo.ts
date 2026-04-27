@@ -25,6 +25,7 @@ const inputSchema = {
 export const tapTempoTool: ToolDefinition<typeof inputSchema> = {
   name: "resolume_tap_tempo",
   title: "Tap tempo",
+  stability: "beta",
   description:
     "Sends one or more taps to Resolume's tap-tempo controller. Use this to set BPM by feel — call multiple times in rhythm with the music. If you know the target BPM, pass `taps: 4, intervalMs: 60000/BPM` for a single bar of taps.",
   inputSchema,

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] — Sprint B (v0.5.0 work in progress)
+
+Phase 1 + Phase 2 of v0.5 Component 3 (`docs/v0.5/03-tool-registry.md`).
+
+### Refactor — flip tool-index import to generated file (Phase 1)
+
+- **`src/server/registerTools.ts`** now imports `allTools` from `./tools/index.generated.js` instead of the manual `index.ts`.
+- **`src/tools/index.ts`** becomes a thin re-export over `index.generated.ts`. Adding/removing/renaming a tool is now a single-file edit (the tool source) plus `npm run gen:tools`.
+- **`scripts/check-skill-sync.mjs`** drops its bespoke `index.ts` parser and reads `tool-manifest.json` directly. Errors out with a clear `tool-manifest.json missing — run npm run gen:tools first` if the codegen was skipped.
+- **`prepublishOnly` chain** verified to run `check:tools` → `build` → `test` → `check:skill-sync` so a published artifact can never escape with stale codegen, missing manifest, failing tests, or skill-doc drift.
+
 ## [0.4.3] - 2026-04-27
 
 Sprint A of the v0.5 roadmap (`docs/v0.5/99-roadmap.md`). **Pure refactor + dormant additions — zero behavior change for any consumer.** Ships as a patch so we have a clean checkpoint before the v0.5.0 feature work begins.

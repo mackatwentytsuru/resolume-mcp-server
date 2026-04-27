@@ -23,6 +23,36 @@ export interface ToolContext {
 }
 
 /**
+ * Stability tier for a tool. Defaults to `"stable"` when absent.
+ *
+ *   `stable` — production-grade, covered by tests, behavior frozen.
+ *   `beta`   — works on Resolume but expect rough edges or wording changes.
+ *   `alpha`  — experimental; may change or disappear without a major bump.
+ *
+ * Used by `decorateDescription()` to prefix descriptions with `[BETA]` /
+ * `[ALPHA]` markers and by `filterByStability()` to honour the
+ * `RESOLUME_TOOLS_STABILITY` env var. See docs/v0.5/03-tool-registry.md.
+ */
+export type Stability = "stable" | "beta" | "alpha";
+
+/**
+ * Structured deprecation marker. Presence on a tool implies the tool is
+ * deprecated and triggers a one-time stderr warning at first invocation.
+ *
+ *   `since`       — semver string for the release that introduced the
+ *                   deprecation marker (e.g. "0.5.0").
+ *   `replaceWith` — name of the replacement tool, if any.
+ *   `removeIn`    — semver string for the release that will delete the tool.
+ *   `reason`      — short rationale shown to the LLM and logged.
+ */
+export interface DeprecationInfo {
+  since: string;
+  replaceWith?: string;
+  removeIn?: string;
+  reason?: string;
+}
+
+/**
  * A tool definition uses a Zod *raw shape* (the inner object, not z.object(...)).
  * That matches the @modelcontextprotocol/sdk `server.tool()` signature directly,
  * avoiding any wrapping/unwrapping at registration time.
@@ -33,6 +63,10 @@ export interface ToolDefinition<TShape extends z.ZodRawShape = z.ZodRawShape> {
   description: string;
   inputSchema: TShape;
   destructive?: boolean;
+  /** Defaults to "stable" when absent. */
+  stability?: Stability;
+  /** Presence marks the tool as deprecated; metadata describes the replacement. */
+  deprecated?: DeprecationInfo;
   handler: (
     args: z.objectOutputType<TShape, z.ZodTypeAny>,
     ctx: ToolContext

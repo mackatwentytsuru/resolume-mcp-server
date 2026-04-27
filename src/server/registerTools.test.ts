@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { z } from "zod";
-import { registerTools } from "./registerTools.js";
+import { registerTools, __deprecationWarned } from "./registerTools.js";
 import { ResolumeApiError } from "../errors/types.js";
 import type { ToolContext } from "../tools/types.js";
 
@@ -159,5 +159,83 @@ describe("schema shape extraction", () => {
   it("extracts the inner shape from a ZodObject-based tool schema", () => {
     const schema = z.object({ foo: z.number(), bar: z.string() }).strict();
     expect(Object.keys(schema.shape)).toEqual(["foo", "bar"]);
+  });
+});
+
+describe("registerTools — deprecation warning lifecycle", () => {
+  it("writes a single stderr warning even when a deprecated tool is invoked twice", async () => {
+    // Inject a synthetic deprecated tool by mocking the generated registry
+    // module before importing registerTools fresh. This way we exercise
+    // the real safeHandle / warnIfDeprecated path without polluting the
+    // production registry.
+    vi.resetModules();
+    const fakeTool = {
+      name: "resolume_legacy_thing",
+      title: "Legacy thing",
+      description: "old",
+      inputSchema: {} as Record<string, never>,
+      stability: "stable" as const,
+      deprecated: {
+        since: "0.5.0",
+        replaceWith: "resolume_new_thing",
+        removeIn: "0.7.0",
+      },
+      handler: vi.fn(async () => ({
+        content: [{ type: "text" as const, text: "ok" }],
+      })),
+    };
+    vi.doMock("../tools/index.generated.js", () => ({
+      allTools: [fakeTool],
+    }));
+    const writeSpy = vi
+      .spyOn(process.stderr, "write")
+      .mockImplementation(() => true);
+    try {
+      const fresh = await import("./registerTools.js");
+      fresh.__deprecationWarned.clear();
+
+      const calls: {
+        name: string;
+        handler: (args: unknown) => Promise<unknown>;
+      }[] = [];
+      const fakeServer = {
+        tool: (
+          name: string,
+          _description: string,
+          _shape: Record<string, unknown>,
+          handler: (args: unknown) => Promise<unknown>
+        ) => {
+          calls.push({ name, handler });
+        },
+      };
+      fresh.registerTools(
+        fakeServer as never,
+        { client: {} as never } satisfies ToolContext
+      );
+      const registered = calls.find((c) => c.name === "resolume_legacy_thing");
+      expect(registered).toBeDefined();
+
+      await registered!.handler({});
+      await registered!.handler({});
+
+      // Only count writes that mention this tool's name + the word
+      // "deprecated" — other startup writes (tier filter banner, etc.)
+      // shouldn't be confused with the deprecation warning.
+      const depWrites = writeSpy.mock.calls.filter((c) => {
+        const text = String(c[0]);
+        return (
+          text.includes("resolume_legacy_thing") && text.includes("deprecated")
+        );
+      });
+      expect(depWrites.length).toBe(1);
+      expect(String(depWrites[0][0])).toContain("0.5.0");
+      expect(String(depWrites[0][0])).toContain("resolume_new_thing");
+      expect(String(depWrites[0][0])).toContain("0.7.0");
+    } finally {
+      writeSpy.mockRestore();
+      vi.doUnmock("../tools/index.generated.js");
+      vi.resetModules();
+      __deprecationWarned.clear();
+    }
   });
 });

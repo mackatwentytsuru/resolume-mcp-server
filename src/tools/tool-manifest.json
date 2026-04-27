@@ -5,216 +5,252 @@
       "destructive": false,
       "file": "src/tools/effect/add-effect.ts",
       "name": "resolume_add_effect_to_layer",
+      "stability": "stable",
       "symbol": "addEffectToLayerTool"
     },
     {
       "destructive": true,
       "file": "src/tools/clip/clear-clip.ts",
       "name": "resolume_clear_clip",
+      "stability": "stable",
       "symbol": "clearClipTool"
     },
     {
       "destructive": true,
       "file": "src/tools/layer/clear-layer.ts",
       "name": "resolume_clear_layer",
+      "stability": "stable",
       "symbol": "clearLayerTool"
     },
     {
       "destructive": false,
       "file": "src/tools/composition/beat-snap.ts",
       "name": "resolume_get_beat_snap",
+      "stability": "stable",
       "symbol": "getBeatSnapTool"
     },
     {
       "destructive": false,
       "file": "src/tools/clip/get-thumbnail.ts",
       "name": "resolume_get_clip_thumbnail",
+      "stability": "stable",
       "symbol": "getClipThumbnailTool"
     },
     {
       "destructive": false,
       "file": "src/tools/composition/get-composition.ts",
       "name": "resolume_get_composition",
+      "stability": "stable",
       "symbol": "getCompositionTool"
     },
     {
       "destructive": false,
       "file": "src/tools/composition/crossfader.ts",
       "name": "resolume_get_crossfader",
+      "stability": "stable",
       "symbol": "getCrossfaderTool"
     },
     {
       "destructive": false,
       "file": "src/tools/tempo/get-tempo.ts",
       "name": "resolume_get_tempo",
+      "stability": "stable",
       "symbol": "getTempoTool"
     },
     {
       "destructive": false,
       "file": "src/tools/layer/set-blend-mode.ts",
       "name": "resolume_list_layer_blend_modes",
+      "stability": "stable",
       "symbol": "listLayerBlendModesTool"
     },
     {
       "destructive": false,
       "file": "src/tools/effect/list-effects.ts",
       "name": "resolume_list_layer_effects",
+      "stability": "stable",
       "symbol": "listLayerEffectsTool"
     },
     {
       "destructive": false,
       "file": "src/tools/layer/transition.ts",
       "name": "resolume_list_layer_transition_blend_modes",
+      "stability": "stable",
       "symbol": "listLayerTransitionBlendModesTool"
     },
     {
       "destructive": false,
       "file": "src/tools/effect/list-effects.ts",
       "name": "resolume_list_video_effects",
+      "stability": "stable",
       "symbol": "listVideoEffectsTool"
     },
     {
       "destructive": false,
       "file": "src/tools/osc/query.ts",
       "name": "resolume_osc_query",
+      "stability": "stable",
       "symbol": "oscQueryTool"
     },
     {
       "destructive": false,
       "file": "src/tools/osc/send.ts",
       "name": "resolume_osc_send",
+      "stability": "stable",
       "symbol": "oscSendTool"
     },
     {
       "destructive": false,
       "file": "src/tools/osc/status.ts",
       "name": "resolume_osc_status",
+      "stability": "stable",
       "symbol": "oscStatusTool"
     },
     {
       "destructive": false,
       "file": "src/tools/osc/subscribe.ts",
       "name": "resolume_osc_subscribe",
+      "stability": "stable",
       "symbol": "oscSubscribeTool"
     },
     {
       "destructive": true,
       "file": "src/tools/effect/remove-effect.ts",
       "name": "resolume_remove_effect_from_layer",
+      "stability": "stable",
       "symbol": "removeEffectFromLayerTool"
     },
     {
       "destructive": false,
       "file": "src/tools/tempo/resync-tempo.ts",
       "name": "resolume_resync_tempo",
+      "stability": "stable",
       "symbol": "resyncTempoTool"
     },
     {
       "destructive": false,
       "file": "src/tools/clip/select-clip.ts",
       "name": "resolume_select_clip",
+      "stability": "stable",
       "symbol": "selectClipTool"
     },
     {
       "destructive": false,
       "file": "src/tools/deck/select-deck.ts",
       "name": "resolume_select_deck",
+      "stability": "stable",
       "symbol": "selectDeckTool"
     },
     {
       "destructive": false,
       "file": "src/tools/composition/beat-snap.ts",
       "name": "resolume_set_beat_snap",
+      "stability": "stable",
       "symbol": "setBeatSnapTool"
     },
     {
       "destructive": false,
       "file": "src/tools/tempo/set-bpm.ts",
       "name": "resolume_set_bpm",
+      "stability": "stable",
       "symbol": "setBpmTool"
     },
     {
       "destructive": false,
       "file": "src/tools/clip/transport.ts",
       "name": "resolume_set_clip_play_direction",
+      "stability": "stable",
       "symbol": "setClipPlayDirectionTool"
     },
     {
       "destructive": false,
       "file": "src/tools/clip/transport.ts",
       "name": "resolume_set_clip_play_mode",
+      "stability": "stable",
       "symbol": "setClipPlayModeTool"
     },
     {
       "destructive": false,
       "file": "src/tools/clip/transport.ts",
       "name": "resolume_set_clip_position",
+      "stability": "stable",
       "symbol": "setClipPositionTool"
     },
     {
       "destructive": false,
       "file": "src/tools/composition/crossfader.ts",
       "name": "resolume_set_crossfader",
+      "stability": "stable",
       "symbol": "setCrossfaderTool"
     },
     {
       "destructive": false,
       "file": "src/tools/effect/set-effect-param.ts",
       "name": "resolume_set_effect_parameter",
+      "stability": "stable",
       "symbol": "setEffectParameterTool"
     },
     {
       "destructive": false,
       "file": "src/tools/layer/set-blend-mode.ts",
       "name": "resolume_set_layer_blend_mode",
+      "stability": "stable",
       "symbol": "setLayerBlendModeTool"
     },
     {
       "destructive": false,
       "file": "src/tools/layer/set-bypass.ts",
       "name": "resolume_set_layer_bypass",
+      "stability": "stable",
       "symbol": "setLayerBypassTool"
     },
     {
       "destructive": false,
       "file": "src/tools/layer/set-opacity.ts",
       "name": "resolume_set_layer_opacity",
+      "stability": "stable",
       "symbol": "setLayerOpacityTool"
     },
     {
       "destructive": false,
       "file": "src/tools/layer/transition.ts",
       "name": "resolume_set_layer_transition_blend_mode",
+      "stability": "stable",
       "symbol": "setLayerTransitionBlendModeTool"
     },
     {
       "destructive": false,
       "file": "src/tools/layer/transition.ts",
       "name": "resolume_set_layer_transition_duration",
+      "stability": "stable",
       "symbol": "setLayerTransitionDurationTool"
     },
     {
       "destructive": false,
       "file": "src/tools/tempo/tap-tempo.ts",
       "name": "resolume_tap_tempo",
+      "stability": "beta",
       "symbol": "tapTempoTool"
     },
     {
       "destructive": false,
       "file": "src/tools/clip/trigger-clip.ts",
       "name": "resolume_trigger_clip",
+      "stability": "stable",
       "symbol": "triggerClipTool"
     },
     {
       "destructive": false,
       "file": "src/tools/column/trigger-column.ts",
       "name": "resolume_trigger_column",
+      "stability": "stable",
       "symbol": "triggerColumnTool"
     },
     {
       "destructive": true,
       "file": "src/tools/clip/clear-clip.ts",
       "name": "resolume_wipe_composition",
+      "stability": "stable",
       "symbol": "wipeCompositionTool"
     }
   ]
