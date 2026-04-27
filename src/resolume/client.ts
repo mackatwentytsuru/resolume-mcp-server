@@ -11,6 +11,7 @@ import {
 import { ResolumeApiError } from "../errors/types.js";
 import { assertIndex, extractName, extractValue } from "./shared.js";
 import * as effects from "./effects.js";
+import * as tempo from "./tempo.js";
 
 /**
  * High-level facade over the Resolume REST API. This is the surface tools
@@ -278,46 +279,23 @@ export class ResolumeClient {
     });
   }
 
-  // ---- Tempo controller ----
+  // ---- Tempo controller (implementations in ./tempo.ts) ----
 
   async getTempo(): Promise<TempoState> {
-    const composition = await this.getComposition();
-    const tc = composition.tempocontroller as
-      | { tempo?: { value?: unknown; min?: number; max?: number } }
-      | undefined;
-    const value = tc?.tempo?.value;
-    return {
-      bpm: typeof value === "number" ? value : null,
-      min: typeof tc?.tempo?.min === "number" ? tc.tempo.min : null,
-      max: typeof tc?.tempo?.max === "number" ? tc.tempo.max : null,
-    };
+    return tempo.getTempo(this.rest);
   }
 
   async setTempo(bpm: number): Promise<void> {
-    if (!Number.isFinite(bpm) || bpm < 20 || bpm > 500) {
-      throw new ResolumeApiError({
-        kind: "InvalidValue",
-        field: "bpm",
-        value: bpm,
-        hint: "BPM must be between 20 and 500 (Resolume's accepted range).",
-      });
-    }
-    await this.rest.put("/composition", {
-      tempocontroller: { tempo: { value: bpm } },
-    });
+    return tempo.setTempo(this.rest, bpm);
   }
 
   /** Send a single tap to the tap-tempo controller. Multiple taps in succession recalibrate Resolume's BPM. */
   async tapTempo(): Promise<void> {
-    await this.rest.put("/composition", {
-      tempocontroller: { tempo_tap: { value: true } },
-    });
+    return tempo.tapTempo(this.rest);
   }
 
   async resyncTempo(): Promise<void> {
-    await this.rest.put("/composition", {
-      tempocontroller: { resync: { value: true } },
-    });
+    return tempo.resyncTempo(this.rest);
   }
 
   // ---- Effects (implementations in ./effects.ts) ----
