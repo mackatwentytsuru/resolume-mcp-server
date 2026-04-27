@@ -1,8 +1,8 @@
 ---
 name: resolume-mcp-tester
 description: Test and operate the Resolume MCP server (resolume-mcp-server) end-to-end against a live Resolume Arena. Use when verifying tool behavior, running smoke tests, doing safe live VJ demos, or validating new tools added to the project. Includes white-out prevention rules, state restoration patterns, and agent invocation templates.
-version: 1.0.0
-source: extracted from resolume-mcp-server git history (12 commits, v0.1.0 → v0.4.0)
+version: 0.4.2
+source: extracted from resolume-mcp-server git history (mirrors package.json version per skills/README.md policy)
 ---
 
 # Resolume MCP Tester
@@ -183,9 +183,33 @@ const messages = await client.oscSubscribe(
   "/composition/layers/*/clips/*/transport/position",
   5000
 );
-// messages: [{address, args, timestamp}, ...] — ~30+ updates/sec
+// messages: [{address, args, timestamp}, ...] — ~325 msg/sec verified live
 // Use to detect: clip end approaching, audio playhead position, etc.
+//
+// Note: '*' is segment-bound (OSC 1.0). Each wildcard matches one path
+// segment, NOT '/'. The '/clips/*' between is required —
+// '/composition/layers/*/transport/position' silently matches nothing.
 ```
+
+**⚠️ OSC quirks (verified live in v0.4.1)**:
+- `*` is **segment-bound**: `/composition/layers/*/transport/position` matches NOTHING because Resolume's actual broadcast is `/composition/layers/{N}/clips/{M}/transport/position`. `/a/*` won't match `/a/b/c`.
+- **Playhead value is normalized 0..1**, not milliseconds. Multiply by clip duration (from REST `transport.position.max`) to get ms.
+- Resolume's full set of broadcast addresses (4-second live capture, 2911 messages):
+  - `/composition/layers/{N}/position` (layer position)
+  - `/composition/layers/{N}/clips/{M}/transport/position` (clip playhead — primary)
+  - `/composition/selectedclip/transport/position` (bonus — currently selected clip)
+
+### Rule 4: Long-session (hour-scale) operation
+
+Validated reference: `examples/vj-loop-v2.mjs` ran 64 minutes / 763 ticks against Arena 7.23.2 with zero crashes. The earlier `vj-loop.mjs` (8-beat swap rate) crashed Resolume in 24 seconds.
+
+**Rules for sustained loops**:
+- **Tick rate**: ≥ 5s (never beat-rate for add/remove operations)
+- **Effect stack**: cap at MAX_STACK = 3 (Transform + 2 added)
+- **Swap cooldown**: ≥ 20s between any add or remove
+- **Crash signal**: `getLayer()` throws or returns 404 → stop the loop immediately, do NOT retry. Run cleanup if possible, then exit.
+- **Prefer parameter modulation** over add/remove — params can update every tick safely; reserve add/remove for infrequent creative transitions
+- **Track every mutation** (effects added, blend mode, opacity, transforms) for cleanup on SIGINT/SIGTERM
 
 ## Known limitations (don't try these — they don't work)
 

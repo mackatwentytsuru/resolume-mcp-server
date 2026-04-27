@@ -232,7 +232,7 @@ src/
 
 | Feature | This server | drohi-r | Ayesy | Tortillaguy |
 |---------|-------------|---------|-------|-------------|
-| Tool count | 28 (curated) → 30-40 planned | 206 | 44 | 2 (`search`/`execute`) |
+| Tool count | 36 (curated) | 206 | 44 | 2 (`search`/`execute`) |
 | Language | TypeScript | Python | TypeScript | Python |
 | Schema validation | Zod (strict) | Manual | Zod | None |
 | Thumbnail as image | ✅ | ❌ | ❌ | ❌ |

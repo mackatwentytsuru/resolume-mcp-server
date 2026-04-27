@@ -35,7 +35,11 @@ dependency) to give immediate feedback without waiting on CI:
 | `post-commit` | reminder if `SKILL.md` was touched | <100ms | n/a |
 
 The hooks are POSIX shell scripts, so they work on macOS/Linux directly and
-on Windows via Git Bash (which ships with Git for Windows).
+on Windows via Git Bash (which ships with Git for Windows). On Windows, ensure
+your terminal for git operations is Git Bash (or WSL) — running git from
+cmd.exe / PowerShell with Git for Windows installed will still invoke the
+hooks via Git's bundled `sh.exe`, but if you see hook failures with no error
+output, check that your `PATH` includes `C:\Program Files\Git\usr\bin\`.
 
 ## Project layout
 

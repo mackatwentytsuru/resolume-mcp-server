@@ -1,6 +1,16 @@
-// Continuous BPM-synced VJ loop — runs until killed (Ctrl+C / SIGINT / process kill)
-// Operates Layer 2 only. Cycles through effects + params every beat.
-// Safe defaults from resolume-mcp-tester skill:
+// ⚠️  DEPRECATED — DO NOT USE IN LIVE PERFORMANCE
+//
+// This v1 loop runs effect swaps every 8 beats (~3.6s at 131.4 BPM).
+// That rate crashed Resolume Arena 7.23.2 after ~24 seconds / 6 swaps.
+// The crash dialog appeared; REST returned 404 on the layer path.
+//
+// Use examples/vj-loop-v2.mjs for a crash-validated implementation that
+// enforces a 20-second swap cooldown and a max-3-effect stack cap
+// (verified 64 minutes / 763 ticks no crash).
+//
+// This file is kept only as a before/after contrast reference.
+//
+// Original notes (now misleading, see warning above):
 //   - Bloom Threshold ≥ 0.7, Size ≤ 0.4
 //   - No Trails
 //   - One effect at a time

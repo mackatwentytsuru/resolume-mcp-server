@@ -34,7 +34,7 @@ OSC integration. REST/WS handles state and control surfaces, but Resolume's OSC 
 
 - **`resolume_osc_send`** — fire-and-forget OSC message. Address + positional args (numbers auto-typed to int32/float32, strings, booleans). For one-shot triggers and special commands not in the REST API.
 - **`resolume_osc_query`** — sends an OSC `?` query and returns whatever Resolume echoes back within `timeoutMs` (default 1000ms). Supports wildcards. Fast bulk reads.
-- **`resolume_osc_subscribe`** — listens on the OSC OUT port for `durationMs` (cap 30s) and collects messages whose address matches a glob pattern. Key use: `/composition/layers/*/transport/position` for real-time playhead tracking. Stops early at `maxMessages`.
+- **`resolume_osc_subscribe`** — listens on the OSC OUT port for `durationMs` (cap 30s) and collects messages whose address matches a glob pattern. Key use: `/composition/layers/*/clips/*/transport/position` for real-time playhead tracking (the path was originally documented incorrectly as `/composition/layers/*/transport/position` — see v0.4.1 fix). Stops early at `maxMessages`.
 - **`resolume_osc_status`** — probes whether Resolume is sending on the configured OSC OUT port; returns reachable bool, last-received timestamp, and host/port config.
 
 ### New env vars
@@ -51,7 +51,7 @@ OSC integration. REST/WS handles state and control surfaces, but Resolume's OSC 
 
 ### Verified live
 
-`scripts/smoke-osc.mjs` against the user's running Arena (Tailscale endpoint, BPM 131.4, music playing): subscribed to `/composition/layers/*/transport/position` for 2s and received 649 playhead frames (~325/s); read-only `?` query for tempo round-tripped without mutating state; final REST read confirmed BPM unchanged at 131.4. **No disturbance to the running session.**
+`scripts/smoke-osc.mjs` against the user's running Arena (BPM 131.4, music playing): subscribed for 2s and received 649 playhead frames (~325/s); read-only `?` query for tempo round-tripped without mutating state; final REST read confirmed BPM unchanged at 131.4. **No disturbance to the running session.** (Note: the wildcard pattern used during this test was later found to be incorrect — `/composition/layers/*/transport/position` matches nothing because Resolume broadcasts at the deeper clip-level path. v0.4.1 corrected this in docs and tool description. The 649 frames came through because the subscriber was matching the layer-level `/composition/layers/N/position` traffic that Resolume also broadcasts.)
 
 ### Known limitations (NOT in any API — confirmed)
 
