@@ -2,6 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.2] - 2026-04-27
+
+Hardening release from a 5-perspective code review (typescript / security / general / architect / performance reviewers run in parallel against v0.4.1). All findings actioned. No new tools, no behavior changes for existing callers — internal robustness, refactoring, and stricter validation.
+
+### Fixed (security)
+
+- **Public IP leak removed** — examples/scripts contained a hardcoded Tailscale CGNAT IP (`100.74.26.128`) referencing the maintainer's tailnet. Replaced with `127.0.0.1` across examples (3 files), scripts (5 files), `SKILL.md`, and tests. Kept the CGNAT range example in `src/config.test.ts` using `100.64.0.1` (the reserved CGNAT base) to keep the SSRF-allowlist test meaningful.
+- **Privileged-port rejection** — `RESOLUME_PORT`, `RESOLUME_OSC_IN_PORT`, and `RESOLUME_OSC_OUT_PORT` now reject values below 1024 at config load. Resolume's defaults are 8080/7000/7001 and there is no legitimate reason to bind a privileged port from a userland MCP process. Tests updated.
+
+### Fixed (correctness)
+
+- **OSC bundle decoder boundary** — `decodeBundle` now hard-fails on `sz === 0` and bounds-checks the size word against remaining buffer length. Prevents a tight loop when a malformed bundle declares a size past the buffer end.
+- **OSC `queryOsc` filter timing** — moved the address-pattern match into the message handler so non-matching messages never fill the buffer. Previously the buffer accumulated every packet for the entire timeout window before filtering at the end.
+- **OSC `probeOscStatus` decode validation** — `reachable=true` now requires that the received UDP datagram actually decodes as a valid OSC packet, not just that *some* UDP traffic arrived on the configured port.
+- **`addEffectToLayer` URL-encoding** — effect names with special characters in `effect:///video/{Name}` are now percent-encoded via `encodeURI` consistently.
+- **`setup-hooks.mjs` consumer guard** — when installed as a dependency in another repository, the postinstall hook installer now compares `gitRoot` to the `resolume-mcp-server` package root and skips if they differ. Prevents silently overwriting the consumer's `core.hooksPath`.
+
+### Performance
+
+- **Zod schema hoisted** — `registerTools` now compiles `z.object(tool.inputSchema).strict()` once per tool at registration instead of on every invocation. Removes allocation from the dispatch hot path.
+- **OSC pattern cache** — compiled regex from each glob pattern is cached in a module-level `Map<string, RegExp>`. Subscription matching no longer recompiles per message at ~325 msg/s playhead rates.
+- **Effect type-tag Sets module-scoped** — `NUMERIC_TYPES` / `BOOLEAN_TYPES` / `STRING_TYPES` are now module-level constants in `src/resolume/effects.ts`, not re-allocated per `coerceParamValue` call.
+
+### Refactor
+
+- **`client.ts` 806 → 549 lines** — Effect-related methods (`addEffectToLayer`, `removeEffectFromLayer`, `listLayerEffects`, `listVideoEffects`, `setEffectParameter`, `coerceParamValue`) extracted into `src/resolume/effects.ts` (307 lines). The public API of `ResolumeClient` is unchanged; this is purely a file split.
+- **Shared test fixture** — `buildCtx` factory now lives in `src/tools/test-helpers.ts` and is shared between `tools.test.ts` and `tools.v2.test.ts`, eliminating duplicated mock setup.
+
+### Documentation / skill
+
+- **Skill version bumped to 0.4.2** in `skills/resolume-mcp-tester/SKILL.md` (mirrors `package.json` per `skills/README.md` policy).
+- **Skill safety rules expanded** — Rule 2.5 (rapid effect-swap crash: 8-beat swap rate killed Arena 7.23.2 in 24s / 6 swaps) and Rule 4 (hour-scale operation: 5s tick + 20s swap cooldown + 3-effect cap validated 64 min / 763 ticks no crash) added from the empirical run of `examples/vj-loop-v2.mjs`.
+- **Recipe E** now warns explicitly that OSC `*` is segment-bound (OSC 1.0) — `/composition/layers/*/transport/position` matches nothing because Resolume broadcasts at the deeper clip-level path.
+- **`examples/vj-loop.mjs` deprecated** with prominent warning header — kept for before/after contrast only; `examples/vj-loop-v2.mjs` is the crash-validated reference implementation.
+- **`README.md`** tool count corrected (28 → 36) and **`CONTRIBUTING.md`** gained a Windows Git Bash PATH note for the local hooks workflow.
+
+### Verified
+
+233 tests pass (up from 228). Coverage: 94.05% statements / 87.52% branches / 91.54% functions / 96.25% lines.
+
 ## [0.4.1] - 2026-04-27
 
 Documentation and tool-description fixes from comprehensive live testing of v0.4.0 (3 parallel verification agents, 10+ minute live runs against Arena 7.23.2). No code-level bugs found in 36 tools — all silent-no-op-zero, broken-zero. Fixes are purely accuracy improvements.

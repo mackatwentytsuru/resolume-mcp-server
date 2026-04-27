@@ -27,7 +27,7 @@ The MCP server has 3 communication channels with Resolume:
 | **OSC IN** `udp://127.0.0.1:7000` | Trigger/parameter writes | 7000 | `resolume_osc_send` |
 | **OSC OUT** `udp://127.0.0.1:7001` | Real-time push from Resolume | 7001 | `resolume_osc_query`, `resolume_osc_subscribe` |
 
-**Tool catalog (v0.4.0 — 36 tools)** — see project `README.md` for the canonical list. Categories:
+**Tool catalog (v0.4.2 — 36 tools)** — see project `README.md` for the canonical list. Categories:
 
 - **Composition**: `get_composition`, `get_beat_snap`, `set_beat_snap`, `get_crossfader`, `set_crossfader`
 - **Clips**: `trigger_clip`, `select_clip`, `get_clip_thumbnail`, `set_clip_play_direction`, `set_clip_play_mode`, `set_clip_position`, `clear_clip`, `wipe_composition`
