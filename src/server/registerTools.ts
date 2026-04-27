@@ -16,25 +16,28 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
 }
 
 function registerOne(server: McpServer, ctx: ToolContext, tool: AnyTool): void {
+  // Compile the strict Zod schema once at registration time rather than on
+  // every invocation, avoiding repeated z.object().strict() construction.
+  const schema = z.object(tool.inputSchema).strict();
   // SDK signature: server.tool(name, description, paramsShape, handler).
   // The shape is the raw Zod object map; the SDK wraps it with z.object() internally.
   server.tool(
     tool.name,
     tool.description,
     tool.inputSchema,
-    async (args: unknown) => safeHandle(tool, ctx, args)
+    async (args: unknown) => safeHandle(tool, schema, ctx, args)
   );
 }
 
 async function safeHandle(
   tool: AnyTool,
+  schema: z.ZodObject<z.ZodRawShape>,
   ctx: ToolContext,
   rawArgs: unknown
 ): Promise<ToolResult> {
   try {
     // The SDK already validated against the shape; we re-validate with strict
     // mode to catch unknown keys and produce a clear, schema-stable error message.
-    const schema = z.object(tool.inputSchema).strict();
     const parsed = schema.parse(rawArgs ?? {});
     return await tool.handler(parsed, ctx);
   } catch (err) {

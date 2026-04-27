@@ -690,6 +690,11 @@ export class ResolumeClient {
   }
 }
 
+/** Parameter valuetype sets — hoisted to module scope to avoid per-call allocation. */
+const NUMERIC_TYPES = new Set(["ParamRange", "ParamNumber", "ParamFloat", "ParamInt"]);
+const BOOLEAN_TYPES = new Set(["ParamBoolean"]);
+const STRING_TYPES = new Set(["ParamChoice", "ParamString", "ParamText"]);
+
 /**
  * Coerce an LLM-supplied parameter value to the type Resolume expects for the
  * given valuetype. Without this, e.g. `value: "175"` for a ParamRange would be
@@ -702,11 +707,7 @@ export function coerceParamValue(
 ): number | string | boolean {
   if (!valuetype) return value;
 
-  const numericTypes = new Set(["ParamRange", "ParamNumber", "ParamFloat", "ParamInt"]);
-  const booleanTypes = new Set(["ParamBoolean"]);
-  const stringTypes = new Set(["ParamChoice", "ParamString", "ParamText"]);
-
-  if (numericTypes.has(valuetype)) {
+  if (NUMERIC_TYPES.has(valuetype)) {
     if (typeof value === "number") return value;
     if (typeof value === "string") {
       const n = Number(value);
@@ -721,7 +722,7 @@ export function coerceParamValue(
     if (typeof value === "boolean") return value ? 1 : 0;
   }
 
-  if (booleanTypes.has(valuetype)) {
+  if (BOOLEAN_TYPES.has(valuetype)) {
     if (typeof value === "boolean") return value;
     if (typeof value === "number") return value !== 0;
     if (value === "true") return true;
@@ -734,7 +735,7 @@ export function coerceParamValue(
     });
   }
 
-  if (stringTypes.has(valuetype)) {
+  if (STRING_TYPES.has(valuetype)) {
     return String(value);
   }
 
