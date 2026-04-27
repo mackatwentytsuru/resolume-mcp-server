@@ -1,44 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { allTools } from "./index.js";
 import type { ResolumeClient } from "../resolume/client.js";
+import { buildCtx } from "./test-helpers.js";
 
-function buildCtx(overrides: Partial<ResolumeClient> = {}) {
-  const client = {
-    triggerColumn: vi.fn(async () => undefined),
-    selectDeck: vi.fn(async () => undefined),
-    setLayerBypass: vi.fn(async () => undefined),
-    setLayerBlendMode: vi.fn(async () => undefined),
-    getLayerBlendModes: vi.fn(async () => ["Add", "Multiply", "Screen"]),
-    setTempo: vi.fn(async () => undefined),
-    tapTempo: vi.fn(async () => undefined),
-    resyncTempo: vi.fn(async () => undefined),
-    getTempo: vi.fn(async () => ({ bpm: 128, min: 20, max: 500 })),
-    listVideoEffects: vi.fn(async () => [
-      { idstring: "A101", name: "Add Subtract" },
-      { idstring: "A120", name: "Auto Mask" },
-    ]),
-    listLayerEffects: vi.fn(async () => [
-      {
-        id: 100,
-        name: "Transform",
-        params: [
-          { name: "Scale", valuetype: "ParamRange", value: 100, min: 0, max: 1000 },
-          { name: "Position X", valuetype: "ParamRange", value: 0, min: -32768, max: 32768 },
-        ],
-      },
-    ]),
-    setEffectParameter: vi.fn(async () => undefined),
-    setClipPlayDirection: vi.fn(async () => undefined),
-    setClipPlayMode: vi.fn(async () => undefined),
-    setClipPosition: vi.fn(async () => undefined),
-    clearClip: vi.fn(async () => undefined),
-    wipeComposition: vi.fn(async () => ({ layers: 3, slotsCleared: 27 })),
-    getBeatSnap: vi.fn(async () => ({ value: "1 Bar", options: ["None", "1 Bar", "1/2 Bar"] })),
-    setBeatSnap: vi.fn(async () => undefined),
-    ...overrides,
-  } as unknown as ResolumeClient;
-  return { client, ctx: { client } };
-}
 
 function findTool(name: string) {
   const t = allTools.find((tool) => tool.name === name);
@@ -83,7 +47,7 @@ describe("resolume_set_layer_blend_mode", () => {
 
 describe("resolume_list_layer_blend_modes", () => {
   it("returns the available modes", async () => {
-    const { ctx } = buildCtx();
+    const { ctx } = buildCtx({ getLayerBlendModes: vi.fn(async () => ["Add", "Multiply", "Screen"]) });
     const result = await findTool("resolume_list_layer_blend_modes").handler({ layer: 1 }, ctx);
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as {
       blendModes: string[];
@@ -167,7 +131,12 @@ describe("resolume_get_tempo", () => {
 
 describe("resolume_list_video_effects", () => {
   it("returns the effect catalog with count", async () => {
-    const { ctx } = buildCtx();
+    const { ctx } = buildCtx({
+      listVideoEffects: vi.fn(async () => [
+        { idstring: "A101", name: "Add Subtract" },
+        { idstring: "A120", name: "Auto Mask" },
+      ]),
+    });
     const result = await findTool("resolume_list_video_effects").handler({}, ctx);
     const parsed = JSON.parse((result.content[0] as { text: string }).text) as {
       count: number;
