@@ -331,3 +331,179 @@ describe("CompositionStore — malformed packet drop", () => {
     await store.stop();
   });
 });
+
+describe("CompositionStore — read methods", () => {
+  async function ready() {
+    const rest = makeRest(async () => SEED_FIXTURE);
+    const sock = createFakeSocket();
+    const store = new CompositionStore({
+      options: makeOptions(),
+      rest,
+      socketFactory: () => sock,
+      stderr: { write: () => {} },
+    });
+    await store.start();
+    return { rest, sock, store };
+  }
+
+  it("readLayer returns null for unknown layer", async () => {
+    const { store } = await ready();
+    expect(store.readLayer(99)).toBeNull();
+    expect(store.readLayer(0)).toBeNull();
+    expect(store.readLayer(1)).not.toBeNull();
+    expect(store.readLayer(1)!.layerIndex).toBe(1);
+    await store.stop();
+  });
+
+  it("readClip returns null for unknown layer or clip", async () => {
+    const { store } = await ready();
+    expect(store.readClip(99, 1)).toBeNull();
+    expect(store.readClip(1, 99)).toBeNull();
+    expect(store.readClip(1, 0)).toBeNull();
+    expect(store.readClip(1, 1)).not.toBeNull();
+    await store.stop();
+  });
+
+  it("readCrossfader returns the cached scalar", async () => {
+    const { store } = await ready();
+    const cf = store.readCrossfader();
+    expect(cf.value).toBe(0);
+    expect(cf.source.kind).toBe("rest");
+    await store.stop();
+  });
+
+  it("readClipPosition exposes age and source", async () => {
+    const { store, sock } = await ready();
+    sock.emitMessage(encodeMessage("/composition/layers/1/clips/1/transport/position", [0.42]));
+    const pos = store.readClipPosition(1, 1);
+    expect(pos.value).not.toBeNull();
+    expect(pos.value!).toBeCloseTo(0.42, 4);
+    expect(pos.source.kind).toBe("osc");
+    expect(typeof pos.ageMs).toBe("number");
+    expect(pos.ageMs).toBeGreaterThanOrEqual(0);
+    await store.stop();
+  });
+
+  it("readClipPosition returns null/null for unknown clip", async () => {
+    const { store } = await ready();
+    const pos = store.readClipPosition(99, 1);
+    expect(pos.value).toBeNull();
+    expect(pos.ageMs).toBeNull();
+    expect(pos.source.kind).toBe("unknown");
+    await store.stop();
+  });
+});
+
+describe("CompositionStore — freshness gates", () => {
+  async function ready() {
+    const rest = makeRest(async () => SEED_FIXTURE);
+    const sock = createFakeSocket();
+    const store = new CompositionStore({
+      options: makeOptions(),
+      rest,
+      socketFactory: () => sock,
+      stderr: { write: () => {} },
+    });
+    await store.start();
+    return { sock, store };
+  }
+
+  it("isFresh respects override age in ms", async () => {
+    const { store } = await ready();
+    expect(store.isFresh("transportPosition", 100)).toBe(true);
+    expect(store.isFresh("transportPosition", 1_000)).toBe(false);
+    expect(store.isFresh("opacity", 4_999)).toBe(true);
+    expect(store.isFresh("bpm", 1_999)).toBe(true);
+    expect(store.isFresh("structural", 29_999)).toBe(true);
+    await store.stop();
+  });
+
+  it("isFresh without override falls back to lastOscAt", async () => {
+    const { store, sock } = await ready();
+    expect(store.isFresh("bpm")).toBe(false); // no OSC yet
+    sock.emitMessage(encodeMessage("/composition/tempocontroller/tempo", [0.5]));
+    expect(store.isFresh("bpm")).toBe(true);
+    await store.stop();
+  });
+
+  it("isHydrated and isOscLive flip independently", async () => {
+    const { store, sock } = await ready();
+    expect(store.isHydrated()).toBe(true);
+    expect(store.isOscLive()).toBe(false);
+    sock.emitMessage(encodeMessage("/composition/tempocontroller/tempo", [0.5]));
+    expect(store.isOscLive()).toBe(true);
+    await store.stop();
+  });
+
+  it("respects custom TTL overrides via options.ttls", async () => {
+    const rest = makeRest(async () => SEED_FIXTURE);
+    const sock = createFakeSocket();
+    const store = new CompositionStore({
+      options: makeOptions({
+        ttls: {
+          transportPositionMs: 100,
+          layerScalarsMs: 1_000,
+          compositionScalarsMs: 500,
+          structuralMs: 10_000,
+        },
+      }),
+      rest,
+      socketFactory: () => sock,
+      stderr: { write: () => {} },
+    });
+    await store.start();
+    expect(store.isFresh("transportPosition", 100)).toBe(true);
+    expect(store.isFresh("transportPosition", 101)).toBe(false);
+    expect(store.isFresh("opacity", 1_000)).toBe(true);
+    expect(store.isFresh("bpm", 500)).toBe(true);
+    expect(store.isFresh("structural", 10_000)).toBe(true);
+    await store.stop();
+  });
+});
+
+describe("CompositionStore — onChange reactivity", () => {
+  it("fires on snapshot replacement, not on no-op writes", async () => {
+    const rest = makeRest(async () => SEED_FIXTURE);
+    const sock = createFakeSocket();
+    const store = new CompositionStore({
+      options: makeOptions(),
+      rest,
+      socketFactory: () => sock,
+      stderr: { write: () => {} },
+    });
+    await store.start();
+    const listener = vi.fn();
+    const unsub = store.onChange(listener);
+    // listener fires once when opacity changes from seeded 0.8 → 0.5.
+    sock.emitMessage(encodeMessage("/composition/layers/1/video/opacity", [0.5]));
+    const after1 = listener.mock.calls.length;
+    expect(after1).toBeGreaterThanOrEqual(1);
+    // Identical opacity → no-op, revision unchanged, no listener call.
+    sock.emitMessage(encodeMessage("/composition/layers/1/video/opacity", [0.5]));
+    expect(listener).toHaveBeenCalledTimes(after1);
+    unsub();
+    sock.emitMessage(encodeMessage("/composition/layers/1/video/opacity", [0.7]));
+    expect(listener).toHaveBeenCalledTimes(after1);
+    await store.stop();
+  });
+
+  it("isolates listener errors", async () => {
+    const rest = makeRest(async () => SEED_FIXTURE);
+    const sock = createFakeSocket();
+    const store = new CompositionStore({
+      options: makeOptions(),
+      rest,
+      socketFactory: () => sock,
+      stderr: { write: () => {} },
+    });
+    await store.start();
+    const ok = vi.fn();
+    store.onChange(() => {
+      throw new Error("boom");
+    });
+    store.onChange(ok);
+    sock.emitMessage(encodeMessage("/composition/tempocontroller/tempo", [0.5]));
+    expect(ok).toHaveBeenCalled();
+    await store.stop();
+  });
+});

@@ -376,7 +376,13 @@ export class CompositionStore {
 
   private commit(next: CachedComposition): void {
     if (next === this.snapshot) return;
+    const prevRevision = this.snapshot.revision;
     this.snapshot = next;
+    // Only fire onChange listeners when the revision actually changed.
+    // High-frequency no-op writes (e.g. transportPosition replays of the same
+    // value, or oscLive/lastOscAt-only updates) replace the snapshot
+    // reference but leave revision unchanged, so listeners are NOT awoken.
+    if (next.revision === prevRevision) return;
     if (this.listeners.size > 0) {
       for (const listener of this.listeners) {
         try {
