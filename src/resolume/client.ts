@@ -37,11 +37,13 @@ export class ResolumeClient {
 
   // ---- Composition / state ----
 
+  /** Returns the full raw composition tree as Resolume serves it. */
   async getComposition(): Promise<Composition> {
     const raw = await this.rest.get("/composition");
     return CompositionSchema.parse(raw);
   }
 
+  /** Resolume version + product info. Returns null on Resolume builds where /product 404s. */
   async getProductInfo(): Promise<ProductInfo | null> {
     try {
       const raw = await this.rest.get("/product");
@@ -54,6 +56,7 @@ export class ResolumeClient {
     }
   }
 
+  /** Compact LLM-facing summary: version, BPM, layer/column/deck overview. */
   async getCompositionSummary(): Promise<CompositionSummary> {
     const [composition, product] = await Promise.all([
       this.getComposition(),
@@ -64,28 +67,33 @@ export class ResolumeClient {
 
   // ---- Clip / column / deck actions ----
 
+  /** Connects (plays) a clip. Equivalent to clicking it in the Resolume UI. */
   async triggerClip(layer: number, clip: number): Promise<void> {
     assertIndex("layer", layer);
     assertIndex("clip", clip);
     await this.rest.post(`/composition/layers/${layer}/clips/${clip}/connect`);
   }
 
+  /** Puts the clip under selection focus without connecting it. */
   async selectClip(layer: number, clip: number): Promise<void> {
     assertIndex("layer", layer);
     assertIndex("clip", clip);
     await this.rest.post(`/composition/layers/${layer}/clips/${clip}/select`);
   }
 
+  /** Fires every clip in the column simultaneously across all layers. */
   async triggerColumn(column: number): Promise<void> {
     assertIndex("column", column);
     await this.rest.post(`/composition/columns/${column}/connect`);
   }
 
+  /** Switches the active deck. Decks act as scene/song banks. */
   async selectDeck(deck: number): Promise<void> {
     assertIndex("deck", deck);
     await this.rest.post(`/composition/decks/${deck}/select`);
   }
 
+  /** Disconnects all clips on the layer (layer goes black). */
   async clearLayer(layer: number): Promise<void> {
     assertIndex("layer", layer);
     await this.rest.post(`/composition/layers/${layer}/clear`);
@@ -93,6 +101,7 @@ export class ResolumeClient {
 
   // ---- Layer parameters (nested PUT) ----
 
+  /** Master opacity in 0..1. */
   async setLayerOpacity(layer: number, value: number): Promise<void> {
     assertIndex("layer", layer);
     if (value < 0 || value > 1 || Number.isNaN(value)) {
@@ -108,6 +117,7 @@ export class ResolumeClient {
     });
   }
 
+  /** Mute/unmute the layer (skips rendering when bypassed). */
   async setLayerBypass(layer: number, bypassed: boolean): Promise<void> {
     assertIndex("layer", layer);
     await this.rest.put(`/composition/layers/${layer}`, {
@@ -115,6 +125,7 @@ export class ResolumeClient {
     });
   }
 
+  /** Layer blend mode (Add, Multiply, Screen, etc.). Pre-validates against live options. */
   async setLayerBlendMode(layer: number, blendMode: string): Promise<void> {
     assertIndex("layer", layer);
     if (typeof blendMode !== "string" || blendMode.length === 0) {
@@ -141,6 +152,7 @@ export class ResolumeClient {
     });
   }
 
+  /** Returns the list of available blend mode names for the layer. */
   async getLayerBlendModes(layer: number): Promise<string[]> {
     assertIndex("layer", layer);
     const raw = (await this.rest.get(`/composition/layers/${layer}`)) as {
@@ -195,6 +207,7 @@ export class ResolumeClient {
 
   // ---- Effects ----
 
+  /** Resolume's full video effect catalog (~100 entries). */
   async listVideoEffects(): Promise<EffectCatalogEntry[]> {
     const raw = (await this.rest.get("/effects/video")) as unknown;
     if (!Array.isArray(raw)) return [];
@@ -296,9 +309,9 @@ export class ResolumeClient {
     if (!Number.isInteger(effectIndex) || effectIndex < 1) {
       throw new ResolumeApiError({
         kind: "InvalidIndex",
-        what: "clip",
+        what: "effect",
         index: effectIndex,
-        hint: "effectIndex is the 1-based position of the effect on the layer. Call resolume_list_layer_effects to enumerate.",
+        hint: "effectIndex is the 1-based position of the effect on the layer. List the layer's effects to enumerate.",
       });
     }
     if (typeof paramName !== "string" || paramName.length === 0) {
@@ -323,9 +336,9 @@ export class ResolumeClient {
     if (!target) {
       throw new ResolumeApiError({
         kind: "InvalidIndex",
-        what: "clip",
+        what: "effect",
         index: effectIndex,
-        hint: `Layer ${layer} has only ${effects.length} effect(s). Call resolume_list_layer_effects.`,
+        hint: `Layer ${layer} has only ${effects.length} effect(s). List the layer's effects first.`,
       });
     }
     if (typeof target.id !== "number") {
@@ -428,6 +441,25 @@ export class ResolumeClient {
         hint: 'mode is one of "Loop", "Bounce", "Random", "Play Once & Clear", "Play Once & Hold".',
       });
     }
+    // Validate against the live options to avoid Resolume's silent no-op on
+    // unknown mode names.
+    const layerData = (await this.rest.get(`/composition/layers/${layer}/clips/${clip}`)) as {
+      transport?: {
+        controls?: { playmode?: { options?: unknown[] } };
+      };
+    };
+    const opts = layerData?.transport?.controls?.playmode?.options;
+    const available = Array.isArray(opts)
+      ? opts.filter((o): o is string => typeof o === "string")
+      : [];
+    if (available.length > 0 && !available.includes(mode)) {
+      throw new ResolumeApiError({
+        kind: "InvalidValue",
+        field: "mode",
+        value: mode,
+        hint: `Unknown play mode "${mode}". Available: ${available.join(", ")}.`,
+      });
+    }
     await this.rest.put(`/composition/layers/${layer}/clips/${clip}`, {
       transport: { controls: { playmode: { value: mode } } },
     });
@@ -451,6 +483,15 @@ export class ResolumeClient {
 
   // ---- Thumbnails ----
 
+  /**
+   * Returns the clip's thumbnail as base64-encoded image bytes. Resolume serves
+   * thumbnails at `.../thumbnail` and ignores trailing path segments — the
+   * cache-buster must be a query string.
+   *
+   * @param cacheBuster Internal: function returning a unique number per call
+   *                    to defeat HTTP caches. Default: `Date.now`. Override
+   *                    only in tests where you need a deterministic URL.
+   */
   async getClipThumbnail(
     layer: number,
     clip: number,
@@ -499,16 +540,14 @@ export function coerceParamValue(
 
   if (booleanTypes.has(valuetype)) {
     if (typeof value === "boolean") return value;
-    if (typeof value === "string") {
-      if (value === "true") return true;
-      if (value === "false") return false;
-    }
     if (typeof value === "number") return value !== 0;
+    if (value === "true") return true;
+    if (value === "false") return false;
     throw new ResolumeApiError({
       kind: "InvalidValue",
       field: paramName,
       value,
-      hint: `Parameter "${paramName}" is ${valuetype}; value must be true/false.`,
+      hint: `Parameter "${paramName}" is ${valuetype}; value must be true, false, 0, 1, "true", or "false". Got ${typeof value === "string" ? `"${value}"` : String(value)}.`,
     });
   }
 

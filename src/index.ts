@@ -12,14 +12,15 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { loadConfig } from "./config.js";
 import { ResolumeClient } from "./resolume/client.js";
 import { registerTools } from "./server/registerTools.js";
+import { NAME, VERSION } from "./version.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const client = ResolumeClient.fromConfig(config);
 
   const server = new McpServer({
-    name: "resolume-mcp-server",
-    version: "0.2.3",
+    name: NAME,
+    version: VERSION,
   });
 
   registerTools(server, { client });

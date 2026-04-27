@@ -12,6 +12,7 @@ export default defineConfig({
         "src/server/index.ts",
         "src/**/*.test.ts",
         "src/resolume/types.ts",
+        "src/version.ts",
       ],
       thresholds: {
         branches: 80,

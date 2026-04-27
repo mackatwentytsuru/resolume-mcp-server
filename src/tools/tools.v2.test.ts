@@ -130,6 +130,17 @@ describe("resolume_tap_tempo", () => {
     expect(client.tapTempo).toHaveBeenCalledTimes(3);
     expect(result.isError).toBeFalsy();
   });
+
+  it("refuses sequences whose total wall time exceeds the cap", async () => {
+    const { client, ctx } = buildCtx();
+    // 8 taps × 3000ms = 21000ms — well over the 12s cap.
+    const result = await findTool("resolume_tap_tempo").handler(
+      { taps: 8, intervalMs: 3000 },
+      ctx
+    );
+    expect(result.isError).toBe(true);
+    expect(client.tapTempo).not.toHaveBeenCalled();
+  });
 });
 
 describe("resolume_resync_tempo", () => {

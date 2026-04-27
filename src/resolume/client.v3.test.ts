@@ -88,8 +88,14 @@ describe("ResolumeClient.setClipPlayDirection", () => {
 });
 
 describe("ResolumeClient.setClipPlayMode", () => {
-  it("PUTs nested transport body with the mode string", async () => {
-    const { client, rest } = buildClient();
+  it("PUTs nested transport body with the mode string when allowed", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        transport: {
+          controls: { playmode: { options: ["Loop", "Bounce", "Random"] } },
+        },
+      }),
+    });
     await client.setClipPlayMode(1, 1, "Bounce");
     expect(rest.put).toHaveBeenCalledWith("/composition/layers/1/clips/1", {
       transport: { controls: { playmode: { value: "Bounce" } } },
@@ -101,6 +107,25 @@ describe("ResolumeClient.setClipPlayMode", () => {
     await expect(client.setClipPlayMode(1, 1, "")).rejects.toMatchObject({
       detail: { kind: "InvalidValue", field: "mode" },
     });
+  });
+
+  it("rejects unknown play mode against the live options", async () => {
+    const { client } = buildClient({
+      get: () => ({
+        transport: {
+          controls: { playmode: { options: ["Loop", "Bounce"] } },
+        },
+      }),
+    });
+    await expect(client.setClipPlayMode(1, 1, "WeirdMode")).rejects.toMatchObject({
+      detail: { kind: "InvalidValue", field: "mode" },
+    });
+  });
+
+  it("falls through (no validation) when options aren't exposed", async () => {
+    const { client, rest } = buildClient({ get: () => ({}) });
+    await client.setClipPlayMode(1, 1, "Anything");
+    expect(rest.put).toHaveBeenCalled();
   });
 });
 

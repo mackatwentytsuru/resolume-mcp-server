@@ -40,11 +40,25 @@ export const tapTempoTool: ToolDefinition<typeof inputSchema> = {
         ],
       };
     }
+    // Cap total wall-clock duration to keep the MCP stdio channel responsive.
+    // Worst case allowed: 8 taps × 1500ms gap = 10.5s. Anything longer is
+    // probably a misuse — reject with a clear message.
+    const MAX_TOTAL_MS = 12_000;
+    const projectedMs = intervalMs !== undefined ? (taps - 1) * intervalMs : 0;
+    if (projectedMs > MAX_TOTAL_MS) {
+      return {
+        isError: true,
+        content: [
+          {
+            type: "text",
+            text: `Refusing tap sequence — projected duration ${projectedMs}ms exceeds ${MAX_TOTAL_MS}ms cap. Reduce taps or intervalMs (target BPM probably needs intervalMs = 60000/BPM).`,
+          },
+        ],
+      };
+    }
     for (let i = 0; i < taps; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
       await ctx.client.tapTempo();
       if (intervalMs !== undefined && i < taps - 1) {
-        // eslint-disable-next-line no-await-in-loop
         await new Promise((resolve) => setTimeout(resolve, intervalMs));
       }
     }

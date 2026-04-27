@@ -320,6 +320,51 @@ describe("ResolumeClient.setEffectParameter", () => {
     });
   });
 
+  it("coerces numeric 0/1 to booleans for ParamBoolean", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Active: { valuetype: "ParamBoolean" } } }],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 1, "Active", 1 as unknown as boolean);
+    expect(rest.put).toHaveBeenLastCalledWith("/composition/layers/1", {
+      video: { effects: [{ id: 1, params: { Active: { value: true } } }] },
+    });
+    await client.setEffectParameter(1, 1, "Active", 0 as unknown as boolean);
+    expect(rest.put).toHaveBeenLastCalledWith("/composition/layers/1", {
+      video: { effects: [{ id: 1, params: { Active: { value: false } } }] },
+    });
+  });
+
+  it("rejects non-true/false strings for ParamBoolean with a clear hint", async () => {
+    const { client } = buildClient({
+      get: () => ({
+        video: {
+          effects: [{ id: 1, params: { Active: { valuetype: "ParamBoolean" } } }],
+        },
+      }),
+    });
+    await expect(
+      client.setEffectParameter(1, 1, "Active", "yes" as unknown as boolean)
+    ).rejects.toMatchObject({
+      detail: { kind: "InvalidValue", field: "Active" },
+    });
+  });
+
+  it("uses what:'effect' (not 'clip') for effect-index errors", async () => {
+    const { client } = buildClient({
+      get: () => ({ video: { effects: [{ id: 1, params: { X: {} } }] } }),
+    });
+    await expect(client.setEffectParameter(1, 99, "X", 1)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "effect", index: 99 },
+    });
+    await expect(client.setEffectParameter(1, 0, "X", 1)).rejects.toMatchObject({
+      detail: { kind: "InvalidIndex", what: "effect", index: 0 },
+    });
+  });
+
   it("passes ParamChoice values through as strings", async () => {
     const { client, rest } = buildClient({
       get: () => ({

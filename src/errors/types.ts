@@ -5,7 +5,12 @@
  */
 export type ResolumeError =
   | { kind: "ResolumeNotRunning"; hint: string }
-  | { kind: "InvalidIndex"; what: "layer" | "column" | "clip" | "deck"; index: number; hint: string }
+  | {
+      kind: "InvalidIndex";
+      what: "layer" | "column" | "clip" | "deck" | "effect";
+      index: number;
+      hint: string;
+    }
   | { kind: "InvalidValue"; field: string; value: unknown; hint: string }
   | { kind: "NotFound"; path: string; hint: string }
   | { kind: "BadRequest"; path: string; message: string; hint: string }

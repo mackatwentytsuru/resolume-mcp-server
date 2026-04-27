@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.4] - 2026-04-27
+
+Quality release driven by typescript-reviewer feedback. No new tools — existing ones get more correct, better-documented, and more defensively bounded.
+
+### Fixed (HIGH severity from review)
+
+- **`InvalidIndex.what` discriminant** — effect-index errors used to report `what: "clip"` because the union didn't include `"effect"`. Added `"effect"` to the union and updated `setEffectParameter`'s error throws. The LLM now sees an accurate kind on bad effect indices.
+- **`coerceParamValue` boolean branch** — restructured the boolean-coercion control flow so the rejection path is unambiguous on a re-read. Added tests covering numeric (0/1) coercion and non-`true`/`false` string rejection (previously an uncovered branch).
+
+### Changed / hardened
+
+- **`tap_tempo` total-duration cap** — sequences whose projected wall time exceeds 12 seconds are now refused with a clear error (e.g. `taps=8, intervalMs=3000` would have blocked the MCP channel for ~21s).
+- **`setClipPlayMode` allowlist** — pre-validates against the live options list so unknown modes get a structured error instead of Resolume's silent no-op (same pattern as `setLayerBlendMode` / `setBeatSnap`).
+- **Version string sourced from package.json** — `src/version.ts` reads the manifest at startup so the MCP server identity stays in lock-step on every bump (no more two-place edits).
+- **Public-method JSDoc** — every method on `ResolumeClient` now has at least a one-line summary, including a note that `getClipThumbnail`'s `cacheBuster` parameter is internal.
+
+### Tests
+
+- 136 tests, 97.02% statements / 86.25% branches / 98.05% functions / 98.14% lines
+
 ## [0.2.3] - 2026-04-27
 
 Beat-snap and clip transport — the missing pieces for BPM-synced VJing. 23 tools total.
