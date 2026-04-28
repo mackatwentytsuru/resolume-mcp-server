@@ -169,6 +169,9 @@ export class EffectIdCache {
     // Also catch any in-flight that hasn't yet been written. The `inflight`
     // map may hold keys for this layer that are not yet in `byLayer` (the
     // entry is added on `set`, which happens after the fetcher resolves).
+    // Materialise the keys via Array.from so we can safely `delete` from the
+    // Map mid-iteration without tripping the live-iterator concurrent-mutation
+    // pitfall.
     for (const key of Array.from(this.inflight.keys())) {
       if (key.startsWith(`${layer}:`)) {
         this.inflight.delete(key);
