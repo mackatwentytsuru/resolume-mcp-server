@@ -50,9 +50,34 @@ export interface UdpSocketLike {
   close(cb?: () => void): void;
 }
 
-export type SocketFactory = () => UdpSocketLike;
+/** Address family of the underlying socket. Picked from the target host. */
+export type SocketType = "udp4" | "udp6";
 
-const defaultFactory: SocketFactory = () => dgram.createSocket("udp4");
+/**
+ * Socket factory. The argument is optional for backward compatibility with
+ * existing test factories that ignore it; production callers always pass an
+ * explicit type so IPv6 hosts (e.g. "::1") get a dual-stack-capable socket.
+ */
+export type SocketFactory = (type?: SocketType) => UdpSocketLike;
+
+/**
+ * Default socket factory. Routes `type` directly into `dgram.createSocket`.
+ * Exported so other modules (notably the CompositionStore listener) reuse the
+ * same default rather than duplicating the dgram import.
+ */
+export const defaultSocketFactory: SocketFactory = (type: SocketType = "udp4") =>
+  dgram.createSocket(type);
+
+/**
+ * Heuristic to pick an address family from a host string. Hostnames are
+ * resolved by Node's dgram layer, so we only need to disambiguate explicit
+ * IPv6 literals — anything containing `:` (and not bracketed) is treated as
+ * IPv6. Loopback synonyms `::1` and bare `localhost` cover the common cases.
+ */
+export function pickSocketTypeForHost(host: string): SocketType {
+  if (host.includes(":")) return "udp6";
+  return "udp4";
+}
 
 export interface ReceivedOscMessage extends OscMessage {
   /** Wall-clock timestamp (ms since epoch) the message was received. */
@@ -68,10 +93,10 @@ export async function sendOsc(
   port: number,
   address: string,
   args: ReadonlyArray<OscScalar>,
-  factory: SocketFactory = defaultFactory
+  factory: SocketFactory = defaultSocketFactory
 ): Promise<void> {
   const pkt = encodeMessage(address, args);
-  const sock = factory();
+  const sock = factory(pickSocketTypeForHost(host));
   return new Promise<void>((resolve, reject) => {
     sock.on("error", (err) => {
       try { sock.close(); } catch { /* ignore */ }
@@ -99,9 +124,9 @@ export async function queryOsc(
   outPort: number,
   address: string,
   timeoutMs: number,
-  factory: SocketFactory = defaultFactory
+  factory: SocketFactory = defaultSocketFactory
 ): Promise<ReceivedOscMessage[]> {
-  const sock = factory();
+  const sock = factory(pickSocketTypeForHost(host));
   const collected: ReceivedOscMessage[] = [];
   return new Promise<ReceivedOscMessage[]>((resolve, reject) => {
     let settled = false;
@@ -161,9 +186,11 @@ export async function subscribeOsc(
   pattern: string,
   durationMs: number,
   maxMessages: number,
-  factory: SocketFactory = defaultFactory
+  factory: SocketFactory = defaultSocketFactory
 ): Promise<ReceivedOscMessage[]> {
-  const sock = factory();
+  // No host context here — bind on udp4 (loopback default). Operators running
+  // Resolume on an IPv6-only OSC OUT can override the factory.
+  const sock = factory("udp4");
   const collected: ReceivedOscMessage[] = [];
   return new Promise<ReceivedOscMessage[]>((resolve, reject) => {
     let settled = false;
@@ -211,9 +238,9 @@ export async function subscribeOsc(
 export async function probeOscStatus(
   outPort: number,
   graceMs: number,
-  factory: SocketFactory = defaultFactory
+  factory: SocketFactory = defaultSocketFactory
 ): Promise<{ reachable: boolean; lastReceived: number | null }> {
-  const sock = factory();
+  const sock = factory("udp4");
   return new Promise<{ reachable: boolean; lastReceived: number | null }>(
     (resolve) => {
       let settled = false;

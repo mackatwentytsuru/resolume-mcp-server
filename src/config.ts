@@ -39,7 +39,8 @@ const CacheModeSchema = z
   .enum(["", "0", "1", "owner", "passive", "shared"])
   .default("")
   .transform((v) => {
-    if (v === "" || v === "0") return "off" as const;
+    // The enum guarantees `v` is one of the six listed values — the final
+    // branch below is total. No fallback case is needed (or reachable).
     if (v === "1" || v === "owner") return "owner" as const;
     if (v === "passive" || v === "shared") return "shared" as const;
     return "off" as const;

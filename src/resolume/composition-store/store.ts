@@ -19,10 +19,14 @@
  * store's `collect()` so they can coexist.
  */
 
-import dgram from "node:dgram";
 import type { Buffer } from "node:buffer";
 import { decodePacket } from "../osc-codec.js";
-import type { ReceivedOscMessage, SocketFactory, UdpSocketLike } from "../osc-client.js";
+import {
+  defaultSocketFactory,
+  type ReceivedOscMessage,
+  type SocketFactory,
+  type UdpSocketLike,
+} from "../osc-client.js";
 import type { ResolumeRestClient } from "../rest.js";
 import { SubscriptionMux } from "./mux.js";
 import { applyFullSeed, applyOscMessage, createEmptySnapshot } from "./reducers.js";
@@ -35,9 +39,7 @@ import type {
   CompositionStoreMode,
   CompositionStoreOptions,
 } from "./types.js";
-import { ageMs, type TtlField } from "./ttl.js";
-
-const defaultFactory: SocketFactory = () => dgram.createSocket("udp4");
+import { ageMs, DEFAULT_TTL_MS, type TtlField } from "./ttl.js";
 
 const DEFAULT_HYDRATION_TIMEOUT_MS = 5_000;
 const DEFAULT_REHYDRATE_THROTTLE_MS = 500;
@@ -101,7 +103,7 @@ export class CompositionStore {
   constructor(args: StoreConstructorArgs) {
     this.options = args.options;
     this.rest = args.rest;
-    this.socketFactory = args.socketFactory ?? defaultFactory;
+    this.socketFactory = args.socketFactory ?? defaultSocketFactory;
     this.stderr = args.stderr ?? { write: (s) => process.stderr.write(s) };
     this.effectiveMode = args.options.mode;
   }
@@ -115,6 +117,11 @@ export class CompositionStore {
    * a background reconnect loop retries the REST seed until it succeeds.
    * Reads always fall through to REST when `!hydrated`, so the cache is an
    * opt-in optimization, never a single point of failure.
+   *
+   * `hydrationTimeoutMs` controls only the **return** of `start()` — the REST
+   * seed continues in the background after the timeout fires, and any later
+   * success will commit normally and unblock readers via `isHydrated()`.
+   * The timeout is a UX guarantee (boot does not stall), not a cancellation.
    */
   async start(): Promise<void> {
     if (this.stopped) return;
@@ -126,7 +133,9 @@ export class CompositionStore {
 
     const timeoutMs = this.options.hydrationTimeoutMs ?? DEFAULT_HYDRATION_TIMEOUT_MS;
     // Race REST seed against the configured timeout. The seed itself never
-    // throws — it triggers reconnect on failure and returns false.
+    // throws — it triggers reconnect on failure and returns false. We do NOT
+    // abort the seed when the timeout wins; it keeps running in the background
+    // and a late success commits via the same `commit()` path.
     await Promise.race([this.runSeed(), sleep(timeoutMs)]);
   }
 
@@ -335,27 +344,31 @@ export class CompositionStore {
 
   private ttlFor(field: TtlField): number {
     const o = this.options.ttls;
-    if (!o) return ttlDefault(field);
+    if (!o) return DEFAULT_TTL_MS[field];
     switch (field) {
       case "transportPosition":
-        return o.transportPositionMs ?? ttlDefault(field);
+        return o.transportPositionMs ?? DEFAULT_TTL_MS[field];
       case "opacity":
       case "bypassed":
       case "solo":
       case "layerPosition":
-        return o.layerScalarsMs ?? ttlDefault(field);
+        return o.layerScalarsMs ?? DEFAULT_TTL_MS[field];
       case "bpm":
       case "crossfaderPhase":
-        return o.compositionScalarsMs ?? ttlDefault(field);
+        return o.compositionScalarsMs ?? DEFAULT_TTL_MS[field];
       case "structural":
-        return o.structuralMs ?? ttlDefault(field);
+        return o.structuralMs ?? DEFAULT_TTL_MS[field];
     }
   }
 
   private tryBindSocket(): void {
     let sock: UdpSocketLike;
     try {
-      sock = this.socketFactory();
+      // Resolume's OSC OUT host may be IPv6 — pick the socket family from the
+      // configured host so binding (and `oscHost` filtering on the kernel
+      // side) behaves consistently with `osc-client.ts`.
+      const type = this.options.oscHost.includes(":") ? "udp6" : "udp4";
+      sock = this.socketFactory(type);
     } catch (err) {
       this.stderr.write(`[resolume-mcp][store] socket create failed: ${describe(err)}\n`);
       return;
@@ -377,7 +390,21 @@ export class CompositionStore {
       this.stderr.write(`[resolume-mcp][store] socket error: ${describe(err)}\n`);
     });
     sock.on("message", (buf: Buffer) => this.onSocketBuffer(buf));
-    sock.bind(this.options.oscOutPort);
+    // `bind()` is normally async (errors come via the on("error") handler
+    // above), but a custom socket factory — or future Node versions — could
+    // throw synchronously. Catch that path so a misbehaving factory degrades
+    // to SHARED instead of unhandled-throwing into `start()`'s caller.
+    try {
+      sock.bind(this.options.oscOutPort);
+    } catch (err) {
+      this.effectiveMode = "shared";
+      this.stderr.write(
+        `[resolume-mcp][store] socket bind threw synchronously; degrading to SHARED: ${describe(err)}\n`
+      );
+      try { sock.close(); } catch { /* ignore */ }
+      this.socket = null;
+      return;
+    }
     this.socket = sock;
   }
 
@@ -509,23 +536,6 @@ export class CompositionStore {
       socketBound: this.socket !== null,
       effectiveMode: this.effectiveMode,
     };
-  }
-}
-
-function ttlDefault(field: TtlField): number {
-  switch (field) {
-    case "transportPosition":
-      return 250;
-    case "opacity":
-    case "bypassed":
-    case "solo":
-    case "layerPosition":
-      return 5_000;
-    case "bpm":
-    case "crossfaderPhase":
-      return 2_000;
-    case "structural":
-      return 30_000;
   }
 }
 

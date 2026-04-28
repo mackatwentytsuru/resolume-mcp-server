@@ -43,6 +43,7 @@ const SKILL_PATH = join(
   "resolume-mcp-tester",
   "SKILL.md"
 );
+const PACKAGE_PATH = join(repoRoot, "package.json");
 
 /**
  * Read the generated tool manifest and return the set of every tool name
@@ -142,6 +143,22 @@ function collectClaimedCounts(skillSource) {
   return counts;
 }
 
+/**
+ * Find every "(vX.Y.Z — N tools)" or "Tool catalog (vX.Y.Z — ...)" version
+ * callout in the SKILL and return the version strings it claims. Used to
+ * flag *version* drift, separate from tool-count drift — e.g. a SKILL.md
+ * saying "v0.5.1" while the package is at v0.5.4.
+ */
+function collectClaimedVersions(skillSource) {
+  const versions = new Set();
+  const re = /v(\d+\.\d+\.\d+)\s*—\s*\d+\s*tools/g;
+  let m;
+  while ((m = re.exec(skillSource)) !== null) {
+    versions.add(m[1]);
+  }
+  return versions;
+}
+
 function main() {
   const t0 = Date.now();
 
@@ -153,6 +170,8 @@ function main() {
   const skillSource = readFileSync(SKILL_PATH, "utf8");
   const mentioned = collectMentionedToolNames(skillSource, registered);
   const claimedCounts = collectClaimedCounts(skillSource);
+  const claimedVersions = collectClaimedVersions(skillSource);
+  const pkgVersion = JSON.parse(readFileSync(PACKAGE_PATH, "utf8")).version;
 
   const missingFromSkill = [...registered]
     .filter((n) => !mentioned.has(n))
@@ -189,6 +208,19 @@ function main() {
       `\n[FAIL] Tool count callouts in SKILL.md disagree with registered count (${expected}):`
     );
     for (const n of countDrift) console.error(`  - SKILL.md says ${n} tools`);
+  }
+
+  // Version drift: any "vX.Y.Z — N tools" callout that disagrees with
+  // package.json#version is a stale snapshot.
+  const versionDrift = [...claimedVersions]
+    .filter((v) => v !== pkgVersion)
+    .sort();
+  if (versionDrift.length > 0) {
+    failed = true;
+    console.error(
+      `\n[FAIL] Tool catalog version callouts in SKILL.md disagree with package.json#version (${pkgVersion}):`
+    );
+    for (const v of versionDrift) console.error(`  - SKILL.md says v${v}`);
   }
 
   if (failed) {

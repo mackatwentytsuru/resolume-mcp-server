@@ -108,7 +108,11 @@ function formatError(err: unknown): ToolResult {
     envelope = {
       error: err.detail.kind,
       message: err.message,
-      hint: "hint" in err.detail ? err.detail.hint : "",
+      // Every ResolumeError variant carries a `hint` string by construction
+      // (enforced by the tagged union in src/errors/types.ts), so accessing
+      // it directly is safe — the previous "hint" in detail guard was
+      // defensive against impossible variants.
+      hint: err.detail.hint,
       detail: err.detail,
     };
   } else if (err instanceof z.ZodError) {

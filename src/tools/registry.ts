@@ -94,16 +94,15 @@ const TIER_RANK: Record<Stability, number> = {
  *   `beta`   → exposes stable + beta (default deploy posture).
  *   `alpha`  → exposes everything.
  *
- * Each tool's stability defaults to `"stable"` when missing — `eraseTool()`
- * already normalises this, but the function is defensive in case it is
- * called against a hand-rolled `AnyTool` array.
+ * `AnyTool.stability` is non-optional (normalised by `eraseTool()` to default
+ * `"stable"`), so this filter does not need to re-default it.
  */
 export function filterByStability(
   tools: ReadonlyArray<AnyTool>,
   maxTier: Stability
 ): AnyTool[] {
   const ceiling = TIER_RANK[maxTier];
-  return tools.filter((t) => TIER_RANK[t.stability ?? "stable"] <= ceiling);
+  return tools.filter((t) => TIER_RANK[t.stability] <= ceiling);
 }
 
 /**

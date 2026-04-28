@@ -61,17 +61,25 @@ async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  // Graceful shutdown: flush the cache socket on SIGINT/SIGTERM.
+  // Graceful shutdown: flush the cache socket on SIGINT/SIGTERM, then exit
+  // explicitly so we don't rely on Node's "no more handles" detection (which
+  // can stall when the SDK transport is still pinned).
   if (store) {
-    const shutdown = async () => {
+    const shutdown = async (signal: NodeJS.Signals) => {
       try {
         await store!.stop();
       } catch {
         /* best-effort */
       }
+      // Conventional signal-exit codes: 128 + signal number. SIGINT=2, SIGTERM=15.
+      process.exit(signal === "SIGTERM" ? 143 : 130);
     };
-    process.once("SIGINT", () => void shutdown());
-    process.once("SIGTERM", () => void shutdown());
+    process.once("SIGINT", () => {
+      void shutdown("SIGINT");
+    });
+    process.once("SIGTERM", () => {
+      void shutdown("SIGTERM");
+    });
   }
 
   const isLoopback =

@@ -52,9 +52,10 @@ export const wipeCompositionTool: ToolDefinition<typeof wipeSchema> = {
     }
     const result = await ctx.client.wipeComposition();
     return jsonResult({
-      cleared: true,
+      cleared: result.failedLayers.length === 0,
       layers: result.layers,
       slotsCleared: result.slotsCleared,
+      failedLayers: result.failedLayers,
     });
   },
 };
