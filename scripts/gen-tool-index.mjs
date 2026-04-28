@@ -395,6 +395,11 @@ function renderGeneratedTs(grouped, entries) {
  * downstream consumer never has to handle `undefined`. `deprecated` is only
  * emitted when the tool actually carries a deprecation marker.
  *
+ * The `count` field is technically derivable from `tools.length` and is
+ * verified equal in tests — it is kept as a top-level field purely to make
+ * manual inspection of the manifest easier (no need to scroll to the end of
+ * the array). Drop it if/when downstream tooling stabilizes.
+ *
  * @param {ToolEntry[]} entries
  */
 function renderManifestJson(entries) {
@@ -402,6 +407,7 @@ function renderManifestJson(entries) {
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0
   );
   const payload = {
+    // Duplicates `tools.length` for at-a-glance inspection; tests assert equality.
     count: sorted.length,
     tools: sorted.map((e) => {
       /** @type {Record<string, unknown>} */
