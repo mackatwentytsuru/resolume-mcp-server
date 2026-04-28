@@ -2,6 +2,71 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.1] - 2026-04-28
+
+Sprint C of the v0.5 roadmap — completes the CompositionStore tool surface, multiplexes legacy OSC tooling through the cache, replaces the slow `wipeComposition` with the official `clearclips` sub-endpoint, and clears the v0.5.0 review's MEDIUM/LOW backlog. **Tool count 36 → 39. No breaking changes.** Four orthogonal worktree-isolated implementer agents ran in parallel, each focused on one component.
+
+### Added — CompositionStore cache-fast read methods
+
+- **`ResolumeClient` accepts an optional `CompositionStore` dependency.** Constructor signature is fully additive (`new ResolumeClient(rest, store?)`); `fromConfig(config, store?)` similarly. When the store is `null` (default — and the only state under v0.4 behavior), every cache-fast method delegates straight to its REST counterpart.
+- **`getTempoFast()`** — cache hit when `store.isFresh("bpm")`; else `getTempo()` REST fallback.
+- **`getClipPositionFast(layer, clip)`** — cache hit when `readClipPosition` ageMs < 500 ms; else REST.
+- **`getClipPositionFastTagged(layer, clip)`** — companion variant returning `{ value, source: "cache" | "rest" }` so tools can surface where the value came from.
+- **`getCrossfaderFast()`** — cache hit when fresh; else REST.
+- **`getLayerOpacityFast(layer)`** — cache hit when fresh AND the source is non-`"unknown"` (a freshly-constructed unhydrated snapshot's default `opacity=1` would otherwise falsely report a cache hit).
+
+### Added — three new MCP tools
+
+- **`resolume_get_clip_position`** — high-frequency-friendly read of a clip's normalized 0..1 transport position. Returns `{ layer, clip, position, source: "cache" | "rest" }`. With `RESOLUME_CACHE=1` and OSC pushing at ~325 msg/s, the LLM can poll this without paying a REST round-trip.
+- **`resolume_cache_status`** — diagnostic. Returns `enabled: boolean` plus the full `store.stats()` payload (revision, hydrated, oscLive, lastOscAt, lastSeedAt, msgsReceived, rehydrationsTriggered, mode). When the store is absent, `{ enabled: false, mode: "off" }`.
+- **`resolume_cache_refresh`** — recovery hatch. Calls `store.refresh()` and returns `{ durationMs, revision }`. When the store is absent, returns an `isError: true` envelope with a helpful hint pointing at `RESOLUME_CACHE`. Use after `cache_status` shows zero recent OSC packets, or after a Resolume restart.
+
+### Changed — `osc_subscribe` multiplexes through CompositionStore
+
+- When `ctx.store` is present, the tool now calls `store.collect(pattern, durationMs, maxMessages)` instead of binding its own UDP socket. **No more `EADDRINUSE` when both the cache and `osc_subscribe` are in use** — the v0.5.0 limitation called out in `SKILL.md` is gone.
+- When `ctx.store` is null (default), the legacy bind-the-port path runs unchanged. v0.4-style consumers see no behavior change.
+- Description updated so the LLM understands the cooperative behavior.
+
+### Changed — `wipeComposition` uses the official `clearclips` sub-endpoint
+
+- The previous implementation issued one `POST /composition/layers/{n}/clips/{m}/clear` per slot — `O(layers × clips)` requests, sequential to avoid flooding Resolume. Static analysis of Resolume's official OpenAPI (vendored in `white-tie-live/resolume-js`) confirmed `POST /composition/layers/{layer-index}/clearclips` clears every clip on a layer in one shot. We now issue `O(layers)` requests with a 4-way concurrency cap (`Promise.all` + cursor-shared workers).
+- `slotsCleared` accounting is preserved: computed from the composition snapshot before dispatch since `clearclips` returns 204 with no count. The effect-id cache is still cleared at the end.
+- See `docs/v0.5/swagger-probe-results.md` for the static-probe findings.
+
+### Sub-endpoint catalog (Component 4 Phase 2)
+
+Probe results for the v0.5 design's speculative endpoint list:
+
+- **CONFIRMED POSITIVE (1)**: `POST /composition/layers/{n}/clearclips` — used in `wipeComposition` rewrite.
+- **CONFIRMED NEGATIVE (4)**: `POST /composition/clear`, `PUT /composition/tempocontroller/tempo` (deep), `POST /composition/tempocontroller/tempo_tap`, `POST /composition/tempocontroller/resync`, `PUT /composition/crossfader/phase`. The "OSC trigger paths usually map 1:1 to REST POST" assumption from the v0.5 design was wrong: Resolume's Swagger lists no deep tempo paths, and Bitfocus Companion's reference confirms tempo resync is WebSocket-or-OSC, never REST. Documented in `docs/v0.5/swagger-probe-results.md` so future probing efforts don't repeat the misread.
+
+### Probe tooling
+
+- **`scripts/probe-subendpoints.mjs`** — reusable probe script. Safety-gates destructive probes behind `--allow-wipe`. Future contributors with live Resolume access can run it to re-validate when Resolume ships an updated REST surface.
+
+### Cleared from v0.5.0 review backlog
+
+Each item from `docs/v0.5/review-v0.5.0.md` MEDIUM/LOW landed as a focused commit:
+
+- **M1**: tightened `__testInternals()` return type (no more `any` + eslint-disable).
+- **M2**: annotated `Math.random()` jitter in `scheduleReconnect` as non-cryptographic.
+- **M3**: debounced `lastOscAt` updates on unknown-address packets (50 ms window — reduces snapshot-replacement allocation pressure on the hot path).
+- **M4**: documented why `Array.from(this.inflight.keys())` is needed in `EffectIdCache.invalidateLayer` (Map iteration + concurrent delete safety).
+- **M6**: documented `wipeComposition` pacing rationale (since superseded by Component 4 Phase 2's parallel rewrite — comment updated to match).
+- **M7 + L1**: narrowed `CompositionStore.invalidate()` from `invalidate(scope?)` to no-arg until scope-aware impl lands. Removed the unused `_scope` parameter.
+- **L2**: `applyTempo` now structurally shares the snapshot when the incoming value is identical to `prev.tempo.bpmNormalized.value`. Eliminates ~325 redundant allocations/s on a tempo-flooded OSC stream.
+- **L4**: documented `gen-tool-index.mjs` regex parser brittleness (nested object literals, template-literal names) and the `--check` CI gate as the safety net.
+- **L5**: noted in the codegen banner that `tool-manifest.json`'s `count` field is for manual inspection (kept it; tests verify `count === tools.length`).
+- **L3, L6, L7, L8, L9**: confirmed/no action needed per the review.
+
+### Verified
+
+441 tests pass (was 398 baseline at v0.5.0; +43 across all four streams). Coverage 94+ % statements / 87+ % branches / 92+ % functions / 96+ % lines.
+
+### Tool count: 36 → 39
+
+Three new tools added (`get_clip_position`, `cache_status`, `cache_refresh`). `SKILL.md` and `tool-manifest.json` updated and reconciled in the merge. `npm run check:skill-sync` green; manifest `count` matches `tools.length`.
+
 ## [0.5.0] - 2026-04-27
 
 Sprint B of the v0.5 roadmap (`docs/v0.5/99-roadmap.md`). Three orthogonal feature components landed in parallel via worktree-isolated implementer agents:
