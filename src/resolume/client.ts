@@ -12,6 +12,7 @@ import * as effects from "./effects.js";
 import * as layer from "./layer.js";
 import * as tempo from "./tempo.js";
 import { EffectIdCache, type EffectIdCacheOptions } from "./effect-id-cache.js";
+import type { CompositionStore } from "./composition-store/store.js";
 
 export { summarizeComposition } from "./composition.js";
 
@@ -49,26 +50,44 @@ export class ResolumeClient {
    */
   private readonly effectIdCache: EffectIdCache;
 
+  /**
+   * Optional CompositionStore for cache-fast read paths (v0.5.1).
+   *
+   * When `null`, all `*Fast` methods delegate transparently to their REST
+   * counterparts so the public surface stays bit-for-bit identical to v0.5.0.
+   * When non-null, methods consult `store.isFresh(...)` / `store.read*()`
+   * before falling back to REST. The store is constructed and wired up by
+   * `index.ts` only when `RESOLUME_CACHE` is set.
+   */
+  private readonly store: CompositionStore | null;
+
   constructor(
     private readonly rest: ResolumeRestClient,
-    cacheOptions: EffectIdCacheOptions = {}
+    cacheOptions: EffectIdCacheOptions = {},
+    store: CompositionStore | null = null
   ) {
     this.effectIdCache = new EffectIdCache(cacheOptions);
+    this.store = store;
   }
 
-  static fromConfig(config: {
-    host: string;
-    port: number;
-    timeoutMs: number;
-    effectCacheEnabled?: boolean;
-  }): ResolumeClient {
+  static fromConfig(
+    config: {
+      host: string;
+      port: number;
+      timeoutMs: number;
+      effectCacheEnabled?: boolean;
+    },
+    store?: CompositionStore
+  ): ResolumeClient {
     const rest = new ResolumeRestClient({
       baseUrl: `http://${config.host}:${config.port}`,
       timeoutMs: config.timeoutMs,
     });
-    return new ResolumeClient(rest, {
-      enabled: config.effectCacheEnabled ?? true,
-    });
+    return new ResolumeClient(
+      rest,
+      { enabled: config.effectCacheEnabled ?? true },
+      store ?? null
+    );
   }
 
   // ---- Composition reads ----
