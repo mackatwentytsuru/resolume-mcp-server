@@ -19,6 +19,9 @@ Three other Resolume MCP servers exist; this one focuses on a **deliberate middl
 - **Visual identification** — `resolume_get_clip_thumbnail` returns the actual image, so Claude can pick the right visual when names are ambiguous.
 - **Destructive-action gating** — `clear_layer` requires explicit `confirm: true` to prevent accidental wipes during live performance.
 - **Helpful errors** — every error variant carries a `hint` field telling the LLM what to do next ("Resolume not running — ask the user to launch it and enable the Webserver").
+- **Push-driven cache** *(v0.5+)* — opt-in `CompositionStore` consumes Resolume's OSC OUT broadcast (~325 msg/s) so high-frequency reads (clip playhead, BPM, layer opacity) don't pay a REST round-trip.
+- **Stability tiers** *(v0.5+)* — every tool carries `stability: stable | beta | alpha`; the `RESOLUME_TOOLS_STABILITY` env filter lets risk-averse operators hide unstable tools.
+- **Live-tested** — every release verified end-to-end against a real Resolume Arena 7.23. Silent no-ops, wire encoding regressions, and Resolume internals (effect-id re-keying after PUTs, double-broadcast of UI-bound parameters) are documented in `docs/v0.5/`.
 
 ## Requirements
 
@@ -78,6 +81,8 @@ Add to `.mcp.json` in your project root:
 
 ### Environment variables
 
+#### Core (always relevant)
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RESOLUME_HOST` | `127.0.0.1` | Host running Resolume's Web Server |
@@ -87,9 +92,18 @@ Add to `.mcp.json` in your project root:
 | `RESOLUME_OSC_IN_PORT` | `7000` | Resolume's OSC IN port — we send to this |
 | `RESOLUME_OSC_OUT_PORT` | `7001` | Resolume's OSC OUT port — we listen on this for queries/subscriptions |
 
-## Tools (v0.4.0)
+#### v0.5+ feature flags (all opt-in; defaults reproduce v0.4 behavior bit-for-bit)
 
-All tools are prefixed with `resolume_` to avoid collision with other MCP servers. Indices are **1-based** to match Resolume's UI.
+| Variable | Values | Default | Description |
+|----------|--------|---------|-------------|
+| `RESOLUME_CACHE` | empty / `0` / `1` / `owner` / `passive` / `shared` | empty (off) | Enables the in-memory `CompositionStore` cache fed by Resolume's OSC OUT broadcast. `1` / `owner` binds the OSC OUT port exclusively; `passive` / `shared` lets other tools feed the cache via `feed()`. EADDRINUSE on `owner` bind auto-degrades to `shared` mode with a stderr warning. |
+| `RESOLUME_EFFECT_CACHE` | `0` / `1` / `true` / `false` | `1` (on) | Effect-id cache for `setEffectParameter`. Single-flight on concurrent calls; layer-wide invalidation on add/remove/wipe/deck-switch. Set to `0` to bisect drift bugs. |
+| `RESOLUME_TOOLS_STABILITY` | `stable` / `beta` / `alpha` | `beta` | Tool tier visibility filter. `stable` hides beta+alpha tools; `alpha` exposes everything (operator escape hatches like `resolume_cache_refresh`). |
+| `RESOLUME_WIPE_CONCURRENCY` | `1`..`16` | `4` | Per-layer parallel POST cap for `wipeComposition`'s `/clearclips` dispatch. Conservative default keeps Resolume's single-threaded HTTP server happy. |
+
+## Tools (v0.5.4 — 39 tools)
+
+All tools are prefixed with `resolume_` to avoid collision with other MCP servers. Indices are **1-based** to match Resolume's UI. Every tool carries an explicit `stability` tier; `tools/list` decorates the description with `[BETA]` / `[ALPHA]` prefixes when applicable, and the `RESOLUME_TOOLS_STABILITY` env var filters what's exposed (default `beta` shows stable+beta, `alpha` shows everything, `stable` hides everything not yet promoted).
 
 ### Composition
 | Tool | What it does |
@@ -105,9 +119,12 @@ All tools are prefixed with `resolume_` to avoid collision with other MCP server
 | `resolume_trigger_clip` | Plays the clip at `{layer, clip}` — the most common VJ action. |
 | `resolume_select_clip` | Selects without playing. Useful before adjusting parameters. |
 | `resolume_get_clip_thumbnail` | Returns the clip's preview image inline so the LLM can see it. |
+| `resolume_get_clip_position` *(v0.5.1+)* | Reads the normalized 0..1 transport position. Cache-first when `RESOLUME_CACHE=1` (sub-ms cache hits, no REST round-trip); REST fallback otherwise. Tagged with `source: "cache" \| "rest"`; cache hits include `ageMs`. |
 | `resolume_set_clip_play_direction` | Forward (`>`) / pause (`||`) / reverse (`<`). |
 | `resolume_set_clip_play_mode` | Loop / Bounce / Random / Play Once & Clear / Play Once & Hold. |
 | `resolume_set_clip_position` | Seek to a specific playback position (re-trigger from start, jump to cue points). |
+| `resolume_clear_clip` | **Destructive.** Empties a single clip slot (removes loaded media). Requires `confirm: true`. |
+| `resolume_wipe_composition` | **Destructive.** Empties every clip slot on every layer in the active composition via per-layer `/clearclips` POSTs. Concurrency cap configurable via `RESOLUME_WIPE_CONCURRENCY`. Requires `confirm: true`. |
 
 ### Layers
 | Tool | What it does |
@@ -131,7 +148,7 @@ All tools are prefixed with `resolume_` to avoid collision with other MCP server
 |------|--------------|
 | `resolume_get_tempo` | Returns current BPM and the accepted range (typically 20..500). |
 | `resolume_set_bpm` | Sets exact BPM (e.g., for synced sets). |
-| `resolume_tap_tempo` | Sends taps to the tap-tempo controller (single tap or multi-tap with interval). |
+| `resolume_tap_tempo` *(beta)* | Sends taps to the tap-tempo controller (single tap or multi-tap with interval). |
 | `resolume_resync_tempo` | Sends a resync trigger to align Resolume's beat clock to the next downbeat. |
 
 ### Effects
@@ -150,8 +167,17 @@ OSC complements REST/WS with a few things they can't do: wildcard reads, real-ti
 |------|--------------|
 | `resolume_osc_send` | One-shot OSC message. Power-user escape hatch for paths like `/composition/tempocontroller/resync`. |
 | `resolume_osc_query` | Sends `?` query (with optional wildcards) and returns Resolume's echoed values. Fastest way to read many values at once. |
-| `resolume_osc_subscribe` | Listens on the OSC OUT port for a duration and collects messages matching a glob pattern. Use `/composition/layers/*/clips/*/transport/position` for real-time clip-playhead tracking (~325 msg/s). ⚠️ `*` is segment-bound (OSC 1.0): `/a/*/b` works, `/a/*` won't match `/a/b/c`. Playhead values are normalized 0..1. |
+| `resolume_osc_subscribe` | Listens on the OSC OUT port for a duration and collects messages matching a glob pattern. Use `/composition/layers/*/clips/*/transport/position` for real-time clip-playhead tracking (~325 msg/s). When `RESOLUME_CACHE` is enabled, transparently multiplexes through the store (no `EADDRINUSE`). ⚠️ `*` is segment-bound (OSC 1.0): `/a/*/b` works, `/a/*` won't match `/a/b/c`. Playhead values are normalized 0..1. **Pass `dedupe: true`** *(v0.5.4+)* to collapse Resolume's wire-level double-broadcast on UI-bound parameters (notably `/composition/layers/*/position`). |
 | `resolume_osc_status` | Probes whether Resolume is broadcasting on the configured OSC OUT port. |
+
+### Cache *(v0.5.1+; gated on `RESOLUME_CACHE`)*
+
+The `CompositionStore` is an in-memory snapshot fed by Resolume's OSC OUT broadcast (~325 msg/s). When enabled, `*Fast` read methods on `ResolumeClient` (and the `resolume_get_clip_position` tool above) consult it instead of paying a REST round-trip. With the cache off (default), every read goes to REST exactly as in v0.4.
+
+| Tool | What it does |
+|------|--------------|
+| `resolume_cache_status` | Diagnostics: returns `{ enabled, mode, revision, hydrated, oscLive, msgsReceived, lastOscAt, lastSeedAt, ... }`. Read-only. Use to verify the cache is receiving OSC pushes after enabling `RESOLUME_CACHE`. |
+| `resolume_cache_refresh` *(alpha — hidden by default)* | Operator escape hatch: forces a full REST re-seed. Rate-limited to one call per 500 ms. Set `RESOLUME_TOOLS_STABILITY=alpha` to expose; intended for recovery (after Resolume restart, or when `cache_status` shows `oscLive=false` despite Resolume running). |
 
 ## Example prompts
 
@@ -190,7 +216,13 @@ Restart Claude Code, then ask it to "run a comprehensive smoke test of resolume-
 - ~~**v0.2** — Tempo, deck, blend mode, effects (set parameters)~~ ✅ shipped
 - ~~**v0.3** — Add/remove effects~~ ✅ shipped
 - ~~**v0.4** — OSC integration (send/query/subscribe/status)~~ ✅ shipped
-- **v0.5** — `resolume_rest` whitelisted escape hatch for power users, Advanced Output (screens, slices)
+- ~~**v0.5** — CompositionStore cache, effect-id cache, stability tiers, cache-fast read methods, `clearclips` sub-endpoint, OSC dedupe~~ ✅ shipped (v0.5.0 → v0.5.4)
+- **v1.0** — npm publish, contract sealed, deprecation policy in effect. Possible additions: `resolume_rest` whitelisted escape hatch for power users, Advanced Output (screens, slices).
+
+Live-discovered fixes since v0.5.0 are documented in `docs/v0.5/`:
+- [`live-test-v0.5.1.md`](./docs/v0.5/live-test-v0.5.1.md) — comprehensive smoke test report against Arena 7.23.2
+- [`osc-duplicate-investigation.md`](./docs/v0.5/osc-duplicate-investigation.md) — root cause analysis of Resolume's wire-level double-broadcast (HIGH confidence)
+- [`review-v0.5.0.md`](./docs/v0.5/review-v0.5.0.md) / [`review-v0.5.1.md`](./docs/v0.5/review-v0.5.1.md) — multi-perspective pre-release reviews
 
 See [issues](https://github.com/mackatwentytsuru/resolume-mcp-server/issues) to vote or contribute.
 
@@ -232,13 +264,16 @@ src/
 
 | Feature | This server | drohi-r | Ayesy | Tortillaguy |
 |---------|-------------|---------|-------|-------------|
-| Tool count | 36 (curated) | 206 | 44 | 2 (`search`/`execute`) |
+| Tool count | **39** (curated) | 206 | 44 | 2 (`search`/`execute`) |
 | Language | TypeScript | Python | TypeScript | Python |
 | Schema validation | Zod (strict) | Manual | Zod | None |
 | Thumbnail as image | ✅ | ❌ | ❌ | ❌ |
 | Destructive confirmation | ✅ | ✅ | ❌ | ❌ |
 | Structured errors with hints | ✅ | Partial | Partial | ❌ |
-| Test coverage | 92%+ | — | — | — |
+| OSC + cache fan-in | ✅ (push-driven, `RESOLUME_CACHE=1`) | ❌ | ✅ (param cache) | ❌ |
+| Stability tiers + filter | ✅ (`stable`/`beta`/`alpha`) | ❌ | ❌ | ❌ |
+| Test coverage | **94%+** statements (483 tests) | — | — | — |
+| Live-tested against Arena 7.23 | ✅ every release | — | — | — |
 
 Other implementations:
 - [drohi-r/resolume-mcp](https://github.com/drohi-r/resolume-mcp) — broadest API surface
