@@ -61,6 +61,17 @@ const ConfigEnvSchema = z.object({
     .default("1")
     .transform((v) => v === "1" || v === "true"),
   RESOLUME_CACHE: CacheModeSchema,
+  // v0.5.4: concurrency cap for `wipeComposition`'s parallel per-layer
+  // `/clearclips` POSTs. Default 4 is safe for most compositions; raise
+  // up to 16 for many-layered shows where the default round-trips
+  // serially. Resolume's HTTP server starts losing throughput beyond
+  // ~8 in-flight requests, so the cap is conservative.
+  RESOLUME_WIPE_CONCURRENCY: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(16)
+    .default(4),
 });
 
 export interface OscConfig {
@@ -81,6 +92,8 @@ export interface ResolumeConfig {
   osc: OscConfig;
   effectCacheEnabled: boolean;
   cache: CacheConfig;
+  /** Per-layer concurrency cap for `wipeComposition`. Range 1..16, default 4. */
+  wipeConcurrency: number;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): ResolumeConfig {
@@ -93,6 +106,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ResolumeConfig
     RESOLUME_OSC_OUT_PORT: env.RESOLUME_OSC_OUT_PORT,
     RESOLUME_EFFECT_CACHE: env.RESOLUME_EFFECT_CACHE,
     RESOLUME_CACHE: env.RESOLUME_CACHE,
+    RESOLUME_WIPE_CONCURRENCY: env.RESOLUME_WIPE_CONCURRENCY,
   });
   return {
     host: parsed.RESOLUME_HOST,
@@ -105,5 +119,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ResolumeConfig
     },
     effectCacheEnabled: parsed.RESOLUME_EFFECT_CACHE,
     cache: { mode: parsed.RESOLUME_CACHE },
+    wipeConcurrency: parsed.RESOLUME_WIPE_CONCURRENCY,
   };
 }

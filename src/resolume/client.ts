@@ -17,6 +17,15 @@ import type { CompositionStore } from "./composition-store/store.js";
 export { summarizeComposition } from "./composition.js";
 
 /**
+ * Discriminated-union return shape for `getClipPositionFastTagged`. The
+ * `cache` variant carries `ageMs` so callers can tune their refresh cadence;
+ * the `rest` variant is the freshly-fetched value with no age metadata.
+ */
+export type ClipPositionResult =
+  | { value: number | null; source: "cache"; ageMs: number }
+  | { value: number | null; source: "rest" };
+
+/**
  * High-level facade over the Resolume REST API. Tools always go through this
  * class — the connection lifecycle (`fromConfig`), schema validation, and the
  * cross-domain `getCompositionSummary` projection live here. Domain logic
@@ -61,13 +70,18 @@ export class ResolumeClient {
    */
   private readonly store: CompositionStore | null;
 
+  /** Concurrency cap for `wipeComposition`'s per-layer parallel POSTs. */
+  private readonly wipeConcurrency: number;
+
   constructor(
     private readonly rest: ResolumeRestClient,
     cacheOptions: EffectIdCacheOptions = {},
-    store: CompositionStore | null = null
+    store: CompositionStore | null = null,
+    wipeConcurrency?: number
   ) {
     this.effectIdCache = new EffectIdCache(cacheOptions);
     this.store = store;
+    this.wipeConcurrency = wipeConcurrency ?? clip.WIPE_LAYER_CONCURRENCY_DEFAULT;
   }
 
   static fromConfig(
@@ -76,6 +90,7 @@ export class ResolumeClient {
       port: number;
       timeoutMs: number;
       effectCacheEnabled?: boolean;
+      wipeConcurrency?: number;
     },
     store?: CompositionStore
   ): ResolumeClient {
@@ -86,7 +101,8 @@ export class ResolumeClient {
     return new ResolumeClient(
       rest,
       { enabled: config.effectCacheEnabled ?? true },
-      store ?? null
+      store ?? null,
+      config.wipeConcurrency
     );
   }
 
@@ -139,7 +155,7 @@ export class ResolumeClient {
     return clip.clearClip(this.rest, l, c);
   }
   async wipeComposition(): Promise<{ layers: number; slotsCleared: number }> {
-    return clip.wipeComposition(this.rest, this.effectIdCache);
+    return clip.wipeComposition(this.rest, this.effectIdCache, this.wipeConcurrency);
   }
   async setClipPlayDirection(
     l: number,
@@ -287,18 +303,20 @@ export class ResolumeClient {
   /**
    * Source-tagged variant of `getClipPositionFast`. Returns the position
    * along with `source: "cache" | "rest"` so callers can surface provenance
-   * to the LLM.
+   * to the LLM. Cache hits also include `ageMs` (how stale the cached
+   * value is when read), letting downstream consumers tune their refresh
+   * cadence — e.g. "got REST because ageMs=600 > 500".
    *
    * Used by `resolume_get_clip_position` (v0.5.1 Phase 5 tool).
    */
   async getClipPositionFastTagged(
     layer: number,
     clip: number
-  ): Promise<{ value: number | null; source: "cache" | "rest" }> {
+  ): Promise<ClipPositionResult> {
     if (this.store && this.store.isHydrated()) {
       const c = this.store.readClipPosition(layer, clip);
       if (c.value !== null && c.ageMs !== null && c.ageMs < 500) {
-        return { value: c.value, source: "cache" };
+        return { value: c.value, source: "cache", ageMs: c.ageMs };
       }
     }
     const value = await this.fetchClipPositionViaRest(layer, clip);

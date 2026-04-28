@@ -1,6 +1,6 @@
 {
   "name": "resolume-mcp-server",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "MCP Server for Resolume Arena - control your VJ software with AI assistants like Claude",
   "type": "module",
   "main": "./build/index.js",

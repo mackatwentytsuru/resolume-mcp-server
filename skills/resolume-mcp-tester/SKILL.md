@@ -1,7 +1,7 @@
 ---
 name: resolume-mcp-tester
 description: Test and operate the Resolume MCP server (resolume-mcp-server) end-to-end against a live Resolume Arena. Use when verifying tool behavior, running smoke tests, doing safe live VJ demos, or validating new tools added to the project. Includes white-out prevention rules, state restoration patterns, and agent invocation templates.
-version: 0.5.3
+version: 0.5.4
 source: extracted from resolume-mcp-server git history (mirrors package.json version per skills/README.md policy)
 ---
 

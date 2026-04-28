@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.4] - 2026-04-28
+
+Backlog cleanup release: clears the v0.5.1 review's MEDIUM/LOW items and adds an opt-in OSC-subscribe deduplication based on a live investigation of Resolume Arena's wire-level double-broadcast.
+
+### Added — `RESOLUME_WIPE_CONCURRENCY` env (M6)
+
+`wipeComposition` now accepts a configurable concurrency cap for its parallel per-layer `/clearclips` POSTs. Default 4 (unchanged). Range 1..16; Resolume's HTTP server starts losing throughput beyond ~8 in-flight requests, so the cap is conservative. Useful for many-layered shows where the default round-trips serially.
+
+### Added — `dedupe` option on `resolume_osc_subscribe` (live OSC investigation)
+
+Resolume Arena 7.23.x is observed (live, 2026-04-28) to broadcast some continuous-parameter UI bindings — notably `/composition/layers/*/position` — **twice per refresh frame** at sub-millisecond spacing. Both copies arrive on the wire as distinct UDP datagrams sharing the same `Date.now()` timestamp. Detailed root-cause investigation at [`docs/v0.5/osc-duplicate-investigation.md`](docs/v0.5/osc-duplicate-investigation.md): every fan-out point in our pipeline is a single emit per packet (verified by code trace + unit tests on `osc-client.ts`, `osc-codec.ts`, `composition-store/store.ts`, `composition-store/mux.ts`); the duplication originates at the wire level. Confidence: HIGH.
+
+`resolume_osc_subscribe` gains an optional `dedupe: boolean` field (default `false`):
+
+- `dedupe: false` (default) — preserves the raw stream so consumers needing jitter / timing analysis see exactly what the wire delivered.
+- `dedupe: true` — collapses consecutive same-`(address, args)` pairs **per address** so legitimate alternation between layers is preserved.
+
+The cache reducer is independently idempotent (per-field source replacement is a no-op when the value matches), so cache-mode reads are unaffected — duplicates are silently absorbed at reducer-time without churning the snapshot.
+
+### Added — `getClipPositionFastTagged` discriminated union (M7)
+
+The function and the `resolume_get_clip_position` tool now return a discriminated union: cache hits include an `ageMs` field surfacing how stale the cached value was (so callers can tune their refresh cadence); REST results have no `ageMs`. TypeScript callers see:
+
+```ts
+type ClipPositionResult =
+  | { value: number | null; source: "cache"; ageMs: number }
+  | { value: number | null; source: "rest" };
+```
+
+Tool description updated. The tool's JSON output adds `ageMs` only when `source === "cache"`.
+
+### Documentation / metadata
+
+- **`wipeComposition` docstring** (M5) — clarifies that `slotsCleared` reports the *intended* wipe size (computed from the pre-flight composition snapshot), not a wire-confirmed count. On per-layer failure the count over-counts; consumers needing strict accounting should re-read the composition.
+- **`Math.random()` jitter comment** (M9) — references `docs/v0.5/01-composition-store.md` and explains the floor-100ms / ±20% rationale.
+- **Tool descriptions** (M8 partial) — `cache_status` and `cache_refresh` description run-on sentences split into 2-3 readable sentences each.
+
+### Verified
+
+483 tests pass (was 474; +9 across `RESOLUME_WIPE_CONCURRENCY` env, OSC `dedupe` per-address state, OSC `dedupe` legacy-path, `getClipPositionFastTagged` discriminated-union shape). `check:tools` and `check:skill-sync` green.
+
+### Deferred to v0.5.5+
+
+- **`Promise.allSettled` accounting** for `wipeComposition` partial failures (M5 stretch).
+- **`osc/subscribe.ts` description normalization** (M8 — the file's description is long but already structured; may be revisited).
+- **L4/L5 codegen comments** — verified during this release that the existing comments already cover the review's intent; no changes needed.
+
 ## [0.5.3] - 2026-04-28
 
 Wire-protocol coercion fix discovered during v0.5.2 live testing.

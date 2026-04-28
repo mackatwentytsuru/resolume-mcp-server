@@ -239,7 +239,7 @@ describe("ResolumeClient.getClipPositionFastTagged", () => {
     const client = new ResolumeClient(rest, {}, store);
 
     const result = await client.getClipPositionFastTagged(2, 3);
-    expect(result).toEqual({ value: 0.5, source: "cache" });
+    expect(result).toEqual({ value: 0.5, source: "cache", ageMs: 100 });
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 

@@ -87,3 +87,121 @@ describe("resolume_osc_subscribe multiplexing", () => {
     expect(oscSubscribeTool.description).toContain("RESOLUME_CACHE");
   });
 });
+
+describe("resolume_osc_subscribe dedupe option (v0.5.4 wire-doubling soft fix)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("preserves the raw stream by default (dedupe omitted)", async () => {
+    const collect = vi.fn(async () => [
+      { address: "/composition/layers/1/position", args: [0.1366], timestamp: 1_000 },
+      { address: "/composition/layers/1/position", args: [0.1366], timestamp: 1_000 },
+      { address: "/composition/layers/1/position", args: [0.1367], timestamp: 1_005 },
+      { address: "/composition/layers/1/position", args: [0.1367], timestamp: 1_005 },
+    ] satisfies ReceivedOscMessage[]);
+    const ctx: ToolContext = {
+      client: dummyClient,
+      osc: baseOsc,
+      store: fakeStore(collect),
+    };
+    const result = await oscSubscribeTool.handler(
+      {
+        addressPattern: "/composition/layers/*/position",
+        durationMs: 200,
+        maxMessages: 100,
+        dedupe: false,
+      },
+      ctx
+    );
+    const json = JSON.parse((result.content[0] as { text: string }).text);
+    expect(json.count).toBe(4);
+  });
+
+  it("collapses consecutive same-(address,args) pairs when dedupe=true", async () => {
+    const collect = vi.fn(async () => [
+      { address: "/composition/layers/1/position", args: [0.1366], timestamp: 1_000 },
+      { address: "/composition/layers/1/position", args: [0.1366], timestamp: 1_000 },
+      { address: "/composition/layers/1/position", args: [0.1367], timestamp: 1_005 },
+      { address: "/composition/layers/1/position", args: [0.1367], timestamp: 1_005 },
+      { address: "/composition/layers/2/position", args: [0.5], timestamp: 1_005 },
+      { address: "/composition/layers/1/position", args: [0.1366], timestamp: 1_010 },
+    ] satisfies ReceivedOscMessage[]);
+    const ctx: ToolContext = {
+      client: dummyClient,
+      osc: baseOsc,
+      store: fakeStore(collect),
+    };
+    const result = await oscSubscribeTool.handler(
+      {
+        addressPattern: "/composition/layers/*/position",
+        durationMs: 200,
+        maxMessages: 100,
+        dedupe: true,
+      },
+      ctx
+    );
+    const json = JSON.parse((result.content[0] as { text: string }).text);
+    // 6 raw → 4 deduped: drop the 2 consecutive duplicates per address.
+    // The L=2 message is kept (different address). The reverting L=1 0.1366
+    // value at ts=1010 is also kept because it's no longer consecutive on
+    // that address (the last accepted L=1 was 0.1367).
+    expect(json.count).toBe(4);
+    expect(json.messages.map((m: { args: number[] }) => m.args[0])).toEqual([
+      0.1366, 0.1367, 0.5, 0.1366,
+    ]);
+  });
+
+  it("dedupe per-address state: L2's first 0.5 is kept even though L1's last value was also 0.5", async () => {
+    // Demonstrates that the lastByAddress Map keeps state PER ADDRESS, so
+    // a value that was just suppressed on layer 1 does not also suppress
+    // layer 2's first occurrence of the same value.
+    const collect = vi.fn(async () => [
+      { address: "/composition/layers/1/position", args: [0.5], timestamp: 1_000 },
+      { address: "/composition/layers/1/position", args: [0.5], timestamp: 1_000 }, // L1 dup → drop
+      { address: "/composition/layers/2/position", args: [0.5], timestamp: 1_001 }, // L2 first → keep
+      { address: "/composition/layers/2/position", args: [0.5], timestamp: 1_001 }, // L2 dup → drop
+    ] satisfies ReceivedOscMessage[]);
+    const ctx: ToolContext = {
+      client: dummyClient,
+      osc: baseOsc,
+      store: fakeStore(collect),
+    };
+    const result = await oscSubscribeTool.handler(
+      {
+        addressPattern: "/composition/layers/*/position",
+        durationMs: 200,
+        maxMessages: 100,
+        dedupe: true,
+      },
+      ctx
+    );
+    const json = JSON.parse((result.content[0] as { text: string }).text);
+    expect(json.count).toBe(2);
+    expect(json.messages.map((m: { address: string }) => m.address)).toEqual([
+      "/composition/layers/1/position",
+      "/composition/layers/2/position",
+    ]);
+  });
+
+  it("dedupe also works on the legacy (non-store) path", async () => {
+    const { subscribeOsc } = await import("../../resolume/osc-client.js");
+    (subscribeOsc as unknown as { mockResolvedValueOnce: (v: unknown) => void }).mockResolvedValueOnce([
+      { address: "/legacy/path", args: [1], timestamp: 1_000 },
+      { address: "/legacy/path", args: [1], timestamp: 1_000 },
+      { address: "/legacy/path", args: [2], timestamp: 1_001 },
+    ] satisfies ReceivedOscMessage[]);
+    const ctx: ToolContext = { client: dummyClient, osc: baseOsc };
+    const result = await oscSubscribeTool.handler(
+      {
+        addressPattern: "/legacy/*",
+        durationMs: 200,
+        maxMessages: 100,
+        dedupe: true,
+      },
+      ctx
+    );
+    const json = JSON.parse((result.content[0] as { text: string }).text);
+    expect(json.count).toBe(2);
+  });
+});

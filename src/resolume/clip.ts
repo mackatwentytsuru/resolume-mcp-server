@@ -86,17 +86,31 @@ export async function clearClip(
  * in parallel with a small concurrency cap so we don't flood Resolume's
  * single-threaded HTTP server.
  *
- * `slotsCleared` is computed from the composition snapshot (sum of
- * `layer.clips.length`) — the per-layer endpoint doesn't return a count,
- * so we report what we expect to be cleared. This matches the contract of
- * the previous implementation, which also computed the count from the same
- * snapshot.
+ * `slotsCleared` reports the *intended* wipe size (sum of `layer.clips.length`
+ * pre-flight), NOT a count of slots actually cleared on the wire. The
+ * per-layer `/clearclips` endpoint returns 204 with no body, so the only
+ * way to attribute counts would be to GET each layer back. If a per-layer
+ * POST fails, `Promise.all` rejects on the first failure and other layers'
+ * work is lost — `slotsCleared` will then over-count for the failed layers.
+ * This matches the contract of the previous (v0.5.0/0.5.1) sequential
+ * implementation; consumers needing strict accounting should re-read the
+ * composition after the call.
+ *
+ * The concurrency cap defaults to `WIPE_LAYER_CONCURRENCY = 4`. Override
+ * via `RESOLUME_WIPE_CONCURRENCY` env (range 1..16) for compositions with
+ * many layers where the default 4 round-trips serially (a 30-layer comp
+ * dispatches 7-8 batches at concurrency 4 vs 4-5 at concurrency 8). The
+ * upper bound of 16 is conservative — Resolume's single-threaded HTTP
+ * server starts to lose throughput beyond ~8 in-flight requests in
+ * informal testing; raise only if telemetry shows headroom.
  */
-const WIPE_LAYER_CONCURRENCY = 4;
+export const WIPE_LAYER_CONCURRENCY_DEFAULT = 4;
+export const WIPE_LAYER_CONCURRENCY_MAX = 16;
 
 export async function wipeComposition(
   rest: ResolumeRestClient,
-  cache?: EffectIdCache
+  cache?: EffectIdCache,
+  concurrency: number = WIPE_LAYER_CONCURRENCY_DEFAULT
 ): Promise<{ layers: number; slotsCleared: number }> {
   const composition = await getComposition(rest);
   const layers = composition.layers ?? [];
@@ -126,10 +140,11 @@ export async function wipeComposition(
       await rest.post(`/composition/layers/${t.layerIndex}/clearclips`);
     }
   }
-  const workers = Array.from(
-    { length: Math.min(WIPE_LAYER_CONCURRENCY, targets.length) },
-    () => worker()
+  const safeConcurrency = Math.max(
+    1,
+    Math.min(concurrency, WIPE_LAYER_CONCURRENCY_MAX, targets.length || 1)
   );
+  const workers = Array.from({ length: safeConcurrency }, () => worker());
   await Promise.all(workers);
   // Conservative wipe — composition shape may be different after; drop
   // the entire effect-id cache. (clearClip is clip-only and would not

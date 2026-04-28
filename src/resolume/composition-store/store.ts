@@ -456,9 +456,14 @@ export class CompositionStore {
     if (this.reconnectTimer) return;
     if (this.stopped) return;
     const base = this.options.reconnectIntervalMs ?? DEFAULT_RECONNECT_INTERVAL_MS;
-    // Jitter ±20% so multiple instances don't synchronize their retries.
+    // Jitter ±20% so multiple instances (e.g. two MCP servers running in
+    // parallel against the same Resolume) don't synchronize their retries
+    // and hammer the REST server in the same window. Floor at 100 ms so the
+    // worst-case lower bound stays bounded. Rationale: see the "Reconnect"
+    // bullet of `docs/v0.5/01-composition-store.md` §"Failure modes".
+    // `Math.random()` is non-cryptographic by design — jitter only, no
+    // security implication.
     const jitter = base * 0.2;
-    // non-cryptographic — jitter only
     const delay = Math.max(100, Math.floor(base + (Math.random() * 2 - 1) * jitter));
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;

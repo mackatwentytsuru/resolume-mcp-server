@@ -10,6 +10,7 @@ describe("loadConfig", () => {
       osc: { host: "127.0.0.1", inPort: 7000, outPort: 7001 },
       effectCacheEnabled: true,
       cache: { mode: "off" },
+      wipeConcurrency: 4,
     });
   });
 
@@ -27,6 +28,7 @@ describe("loadConfig", () => {
       osc: { host: "127.0.0.1", inPort: 7000, outPort: 7001 },
       effectCacheEnabled: true,
       cache: { mode: "off" },
+      wipeConcurrency: 4,
     });
   });
 
@@ -157,6 +159,28 @@ describe("loadConfig", () => {
     it("rejects unknown values", () => {
       expect(() => loadConfig({ RESOLUME_CACHE: "true" })).toThrow();
       expect(() => loadConfig({ RESOLUME_CACHE: "yes" })).toThrow();
+    });
+  });
+
+  describe("RESOLUME_WIPE_CONCURRENCY", () => {
+    it("defaults to 4 when unset", () => {
+      expect(loadConfig({}).wipeConcurrency).toBe(4);
+    });
+    it("accepts 1..16", () => {
+      expect(loadConfig({ RESOLUME_WIPE_CONCURRENCY: "1" }).wipeConcurrency).toBe(1);
+      expect(loadConfig({ RESOLUME_WIPE_CONCURRENCY: "8" }).wipeConcurrency).toBe(8);
+      expect(loadConfig({ RESOLUME_WIPE_CONCURRENCY: "16" }).wipeConcurrency).toBe(16);
+    });
+    it("rejects 0 and negative values", () => {
+      expect(() => loadConfig({ RESOLUME_WIPE_CONCURRENCY: "0" })).toThrow();
+      expect(() => loadConfig({ RESOLUME_WIPE_CONCURRENCY: "-1" })).toThrow();
+    });
+    it("rejects values above 16 (Resolume HTTP throughput cliff)", () => {
+      expect(() => loadConfig({ RESOLUME_WIPE_CONCURRENCY: "17" })).toThrow();
+      expect(() => loadConfig({ RESOLUME_WIPE_CONCURRENCY: "100" })).toThrow();
+    });
+    it("rejects non-numeric values", () => {
+      expect(() => loadConfig({ RESOLUME_WIPE_CONCURRENCY: "abc" })).toThrow();
     });
   });
 });

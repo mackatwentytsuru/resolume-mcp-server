@@ -6,7 +6,10 @@ export const cacheRefreshTool: ToolDefinition<typeof inputSchema> = {
   name: "resolume_cache_refresh",
   title: "Force a full REST re-seed of the CompositionStore",
   description:
-    "Operator escape hatch — forces a full REST seed of the in-memory CompositionStore cache. Returns timing { durationMs, revision } on success, or { throttled: true, retryAfterMs } if called within 500 ms of the last refresh. Marked alpha because the cache normally re-seeds itself on structural drift; this is for recovery (after Resolume restart, or when cache_status shows oscLive=false despite Resolume running) and is not intended for routine LLM use. Hidden by default (RESOLUME_TOOLS_STABILITY=beta excludes alpha tools).",
+    "Operator escape hatch — forces a full REST seed of the CompositionStore cache. " +
+    "Returns `{ durationMs, revision }` on success, or `{ throttled: true, retryAfterMs }` if called within 500 ms of the last refresh. " +
+    "Use only for recovery (after Resolume restart, or when cache_status shows oscLive=false despite Resolume running). The cache normally re-seeds itself on structural drift, so routine use is unnecessary. " +
+    "Marked alpha; hidden under default `RESOLUME_TOOLS_STABILITY=beta`.",
   inputSchema,
   stability: "alpha",
   handler: async (_args, ctx) => {
