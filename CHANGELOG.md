@@ -4,30 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased] — pending v0.5.2 patch
 
-### Fixed — silent no-op on `setEffectParameter` after `addEffectToLayer` (live repro vs Arena 7.23.2)
+### Fixed — silent no-op on `setEffectParameter` cache-hit writes (broader than the original v0.5.2 hypothesis)
 
-- **The bug**: a `setEffectParameter` call against a *just-added* effect would land on the first invocation but silently no-op on every subsequent invocation that hit the effect-id cache. The MCP tool reported success, REST returned 204, but Resolume's stored value never changed past the first write. Reproduced consistently against Resolume Arena 7.23.2 with v0.5.1 + `RESOLUME_EFFECT_CACHE` default-on, e.g.:
+- **The bug**: the FIRST `setEffectParameter` call against any `(layer, effectIndex)` succeeded; every subsequent cache-hit call silently no-op'd. The MCP tool reported success, REST returned 204, but Resolume's stored value never changed past the first write. Reproduced consistently against Resolume Arena 7.23.2 with v0.5.1 + `RESOLUME_EFFECT_CACHE` default-on, including on layers that were **never** mutated by `addEffectToLayer` in the session:
   ```
-  addEffectToLayer(2, "Hue Rotate")           → cache invalidated (correct)
-  setEffectParameter(2, 3, "Hue Rotate", 0.3) → MISS → SUCCESS, value=0.3
-  setEffectParameter(2, 3, "Hue Rotate", 0.7) → HIT  → SILENT NO-OP (value stays 0.3)
-  setEffectParameter(2, 3, "Sat. Scale", 0.2) → HIT  → SILENT NO-OP
+  list_layer_effects(L=3)                                  → only Transform at idx 1
+  setEffectParameter(L=3, eff=1, "Scale", 150)             → MISS → SUCCESS, value=150
+  setEffectParameter(L=3, eff=1, "Scale", 250)             → HIT  → SILENT NO-OP (value stays 150)
   ```
-  Pre-existing effects (Transform, Tile) were unaffected — the bug is specific to the cache hit on a freshly-added effect.
+  And cross-effect on the same layer:
+  ```
+  setEffectParameter(L=2, eff=3, "Hue Rotate", 0.3)        → MISS → SUCCESS, value=0.3
+  setEffectParameter(L=2, eff=2, "Tile X", 0.1)            → HIT  → SILENT NO-OP (value stays 0.4)
+  ```
 
-- **Root cause**: in Resolume Arena 7.23.2 the `GET /composition/layers/{n}` response served *immediately* after `POST /composition/layers/{n}/effects/video/add` returns the new effect with a **transient** numeric `id`. The first nested-PUT against that transient id is accepted (Resolume is still resolving the new effect's parameter graph), but a few milliseconds later Resolume re-keys the effect to its persistent id. Subsequent PUTs against the now-stale cached id silently no-op because Resolume can't locate them. The v0.5 design assumed `(layer, effectIndex) → id` is stable as long as the effect array isn't mutated; live behaviour says it's stable *after one settle window*, not before. WebSocket-based clients (Bitfocus Companion) sidestep this because Resolume pushes an `effects_update` message that carries the post-stabilization id; REST-only clients get the transient id from the immediate GET.
+- **Root cause** (revised — supersedes the original "post-add transient id" hypothesis): a nested-PUT to `/composition/layers/{n}` with a `video.effects[]` body causes Resolume Arena 7.23.2 to **re-key effect ids on that layer**. The first PUT lands because we used a fresh id (from a MISS-fetch); subsequent cache-hit PUTs use the *pre-write* id, which Resolume no longer recognises after the re-key, so they silently no-op. The original v0.5.2 hypothesis ("Resolume returns a transient id after `effects/video/add`, stabilising within ms") only described the post-add subset of this behaviour. Live evidence on pre-existing Transform effects with no add involved (the L=3 repro above) refuted the post-add framing — the re-key happens on **any** effects-array nested PUT, not just after add. WebSocket-based clients (Bitfocus Companion) sidestep this because Resolume pushes an `effects_update` message after each PUT carrying the new ids; REST-only clients have to re-fetch.
 
-- **The fix**: `EffectIdCache.invalidateLayer(layer, { requireRevalidation: true })` now marks the layer as needing one round of "verify before cache". The next MISS-fetch runs the fetcher but does **not** write the result; the call after that re-fetches against the now-stable id and caches normally. `addEffectToLayer` opts into this flag (`removeEffectFromLayer` does not — surviving effects keep their ids). Cost: 1 extra GET per `addEffectToLayer` round-trip cycle. Benefit: the silent-no-op class is eliminated for all cache-hit PUTs against just-added effects.
+- **The fix**: `setEffectParameter` now invalidates the layer's effect-id cache after every successful PUT (`cache?.invalidateLayer(layer)` post-PUT). The next call therefore does GET-then-PUT against the post-write id. This trades the cache's GET-skip benefit for sequential calls in exchange for correctness; the cache structure is retained for **single-flight concurrent coalescing** (multiple parallel callers for the same key still share one in-flight GET) and for bulk invalidation by `wipeComposition` / `selectDeck`. The previous `requireRevalidation` flag on `EffectIdCache.invalidateLayer` is removed as the broader fix subsumes it (`addEffectToLayer` now passes plain `invalidateLayer(layer)`).
 
-- **Files touched**: `src/resolume/effect-id-cache.ts` (added `stabilizing: Set<number>`, extended `invalidateLayer` signature, added stabilization-skip branch in `lookup`'s write-back; +clearAll resets the marker), `src/resolume/effects.ts` (`addEffectToLayer` now passes `{ requireRevalidation: true }` to `invalidateLayer`).
+- **Files touched**: `src/resolume/effects.ts` (`setEffectParameter` invalidates the layer post-PUT; `addEffectToLayer` no longer needs the special flag), `src/resolume/effect-id-cache.ts` (removed the `stabilizing: Set<number>` field, the `requireRevalidation` option, and the stabilization-skip branch in `lookup` — all redundant under the broader fix).
 
-- **Regression tests added** (8 new, total 442 → 450):
-  - `effects.test.ts`: `post-add stabilization: first MISS after addEffectToLayer is NOT cached, second MISS re-fetches with stable id (v0.5.2 silent-no-op fix)` — exercises the exact transient-then-stable id pattern with PUT-body assertions on all three calls.
-  - `effects.test.ts`: `post-add stabilization does not affect OTHER layers (flag is per-layer)`.
-  - `effects.test.ts`: `removeEffectFromLayer does NOT trigger the post-add stabilization flag`.
-  - `effect-id-cache.test.ts`: 5 unit tests under `EffectIdCache requireRevalidation flag (v0.5.2 silent-no-op fix)` covering happy path, default behaviour preservation, per-layer scoping, `clearAll` reset, and the override-clears-marker edge case.
+- **Regression tests added/updated**: total 450 (was 450 pre-fix). `effects.test.ts` adds three explicit live-repro tests: the L=3 Transform.Scale silent-no-op case (no add involved), the L=1 Position X 100→200 case (the v0.5.1 first-known incidence), and a three-sequential-write Transform.Scale cycle. A PUT-body shape-equality test also captures both PUT bodies and asserts byte-equality on shape, ruling out body-shape mismatches as the silent-no-op cause. The single-flight concurrent-coalescing benefit is now explicitly tested. Pre-existing post-add stabilization tests were updated to the post-PUT-invalidation model. The 5 `EffectIdCache requireRevalidation flag` unit tests in `effect-id-cache.test.ts` were removed (the flag they exercised is gone).
 
-- **No breaking change** — `invalidateLayer`'s new options parameter is optional and defaults to the v0.5.1 behaviour. Tools that don't use the cache (`RESOLUME_EFFECT_CACHE=0`) are unaffected.
+- **Behavioural impact**: every sequential call in a tight `setEffectParameter` loop now does one GET + one PUT (was: 1 GET + N PUTs in v0.5.0/v0.5.1, of which only the first PUT actually applied). For a 4-param BPM-synced sweep at 130 BPM this raises the request rate from ~8.7 req/s back to ~17.3 req/s — but the v0.5.1 "fast" rate was illusory because all writes after the first were silently dropped. Concurrent callers for the same key still share one GET via single-flight. Operators who need the original speed at the cost of re-introducing the silent-no-op can opt out via `RESOLUME_EFFECT_CACHE=0` (this disables the cache entirely; behaviour reverts to v0.4.x — every call does GET-then-PUT, which is what we converge on anyway).
+
+- **No breaking API change** — the public method signature of `ResolumeClient.setEffectParameter` is unchanged; only the internal request pacing changed.
 
 ## [0.5.1] - 2026-04-28
 

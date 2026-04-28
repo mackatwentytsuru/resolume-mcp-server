@@ -82,15 +82,6 @@ export class EffectIdCache {
   // same promise rather than launching parallel GETs. Cleared on settle.
   private readonly inflight = new Map<CacheKey, Promise<number>>();
 
-  // Layers awaiting "id stabilization" after `invalidateLayer(layer, { requireRevalidation: true })`.
-  // Live-discovered (v0.5.2): in Resolume Arena 7.23.2 the GET response immediately
-  // after `POST /effects/video/add` exposes an `id` that is **not** the persistent
-  // post-stabilization id. The first PUT against that transient id lands; the
-  // second PUT silently no-ops because Resolume has by then re-keyed the effect.
-  // Skipping the cache write on the very first MISS-fetch after add forces the
-  // next call to re-fetch (against a now-stable id) before caching kicks in.
-  private readonly stabilizing = new Set<number>();
-
   constructor(options: EffectIdCacheOptions = {}) {
     this.ttlMs = options.ttlMs ?? DEFAULT_TTL_MS;
     this.maxEntries = options.maxEntries ?? DEFAULT_MAX_ENTRIES;
@@ -145,16 +136,8 @@ export class EffectIdCache {
         // it cleared `inflight[key]`; in that case, returning the value
         // is fine but writing it back would resurrect a key that was just
         // explicitly invalidated. Skip the write so the next call refetches.
-        // Additionally, if the layer is in the post-add "stabilizing" set
-        // we deliberately skip the write the first time so a subsequent
-        // call re-fetches against the now-stable id (Resolume 7.23.2's
-        // post-add id is transient — see `stabilizing` field comment).
         if (this.inflight.get(key) === promise) {
-          if (this.stabilizing.has(layer)) {
-            this.stabilizing.delete(layer);
-          } else {
-            this.set(key, layer, id);
-          }
+          this.set(key, layer, id);
         }
         return id;
       })
@@ -174,17 +157,13 @@ export class EffectIdCache {
    * any in-flight promise for that layer so a fetcher resolving after this
    * call is *not* written back.
    *
-   * `options.requireRevalidation` (v0.5.2): when true, marks the layer as
-   * needing one round of "verify before cache" — the next MISS-fetch will
-   * run the fetcher but its result will NOT be written to cache; subsequent
-   * calls re-fetch and cache normally. Used by `addEffectToLayer` to dodge
-   * Resolume Arena 7.23.2's transient post-add effect id (see the
-   * `stabilizing` field comment for the live repro details).
+   * Called synchronously by `setEffectParameter` (after every successful PUT,
+   * to dodge Resolume's id re-keying on layer-level nested-PUT writes — see
+   * `effects.ts` for the live repro details), `addEffectToLayer`,
+   * `removeEffectFromLayer`, and the bulk-clear paths (`wipeComposition`,
+   * `selectDeck`).
    */
-  invalidateLayer(
-    layer: number,
-    options: { requireRevalidation?: boolean } = {}
-  ): void {
+  invalidateLayer(layer: number): void {
     const keys = this.byLayer.get(layer);
     if (keys) {
       for (const key of keys) {
@@ -204,15 +183,6 @@ export class EffectIdCache {
         this.inflight.delete(key);
       }
     }
-    if (options.requireRevalidation) {
-      this.stabilizing.add(layer);
-    } else {
-      // Non-stabilizing invalidations (e.g. removeEffectFromLayer, where
-      // Resolume re-keys nothing — surviving effects keep their ids and
-      // only shift indices) should clear any stale stabilization marker
-      // so a previous add-followed-by-remove doesn't leak the flag.
-      this.stabilizing.delete(layer);
-    }
   }
 
   /** Drops every entry and every in-flight promise. */
@@ -220,7 +190,6 @@ export class EffectIdCache {
     this.entries.clear();
     this.byLayer.clear();
     this.inflight.clear();
-    this.stabilizing.clear();
   }
 
   // ---- Internals ----

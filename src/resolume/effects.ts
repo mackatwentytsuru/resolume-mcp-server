@@ -276,6 +276,36 @@ export async function setEffectParameter(
   await rest.put(`/composition/layers/${layer}`, {
     video: { effects: body },
   });
+
+  // v0.5.2: invalidate the layer's cache after every successful PUT.
+  //
+  // Live evidence (Arena 7.23.2): nested-PUT to `/composition/layers/{n}`
+  // appears to cause Resolume to re-key effect ids on that layer. This
+  // means a cached `(layer, effectIndex) → id` is stale immediately after
+  // we write through it: the FIRST write lands (we used a fresh id from
+  // either MISS-fetch or a still-valid cached one), but subsequent
+  // cache-hit writes silently no-op because the id Resolume now stores
+  // is different from the one we cached.
+  //
+  // Reproduction (no add/remove involved):
+  //   setEffectParameter(L=3, eff=1, "Scale", 150)  → MISS → SUCCESS
+  //   setEffectParameter(L=3, eff=1, "Scale", 250)  → HIT  → silent no-op
+  //                                                          (value stays 150)
+  // And cross-effect on same layer:
+  //   setEffectParameter(L=2, eff=3, "Hue Rotate", 0.3) → MISS → SUCCESS
+  //   setEffectParameter(L=2, eff=2, "Tile X", 0.1)     → HIT  → silent no-op
+  //
+  // Fix: drop the entire layer's cached entries after each PUT so the
+  // next call does GET-then-PUT against the post-write id. This trades
+  // the cache's GET-skip benefit for correctness — we still keep the
+  // single-flight protection (concurrent callers for the same key share
+  // one GET) and the cache structure for `wipeComposition` / `selectDeck`
+  // bulk invalidation.
+  //
+  // This subsumes the v0.5.2-pre `requireRevalidation` post-add fix:
+  // the post-add transient-id case was a special instance of "id changes
+  // after a write", and the general rule covers it.
+  cache?.invalidateLayer(layer);
 }
 
 /**
@@ -315,16 +345,15 @@ export async function addEffectToLayer(
   // potentially stale — Resolume can insert at any position. Drop the
   // layer's cache so the next setEffectParameter refetches.
   //
-  // v0.5.2: also flag the layer as `requireRevalidation`. Live testing
-  // against Arena 7.23.2 showed the GET response immediately after add
-  // exposes a *transient* numeric `id` for the new effect. The first PUT
-  // against that transient id lands; the second silently no-ops because
-  // Resolume has by then re-keyed the effect to its persistent id. With
-  // the revalidation flag, the next MISS-fetch runs the fetcher but does
-  // not cache; the call after that re-fetches the now-stable id and
-  // caches normally. Cost: 1 extra GET per add. Benefit: silent-no-op
-  // class eliminated for cache-hit PUTs against just-added effects.
-  cache?.invalidateLayer(layer, { requireRevalidation: true });
+  // v0.5.2: the original "post-add transient id" hypothesis (the cache
+  // returned a transient id that was rejected after a few ms) turned out
+  // to be wrong. Live evidence shows the same silent-no-op pattern on
+  // pre-existing effects with no add involved (see L3-Transform repro
+  // in setEffectParameter). The general fix lives in setEffectParameter,
+  // which now invalidates the layer after every successful PUT. Plain
+  // invalidateLayer here is sufficient — the (now-removed) special
+  // `requireRevalidation` flag was redundant under the broader fix.
+  cache?.invalidateLayer(layer);
 }
 
 /**
