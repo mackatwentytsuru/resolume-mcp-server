@@ -1,14 +1,16 @@
-import { z } from "zod";
 import { errorResult, jsonResult, textResult, type ToolDefinition } from "../types.js";
+import {
+  clipIndexSchema,
+  confirmSchema,
+  layerIndexSchema,
+} from "../schema-helpers.js";
 
 const clearSchema = {
-  layer: z.number().int().min(1).max(9999),
-  clip: z.number().int().min(1).max(9999),
-  confirm: z
-    .boolean()
-    .describe(
-      "Must be true. Clearing a clip removes its loaded media (source, name, thumbnail) — the slot becomes empty. Pass true only when the user has explicitly asked to remove a clip from a slot."
-    ),
+  layer: layerIndexSchema,
+  clip: clipIndexSchema,
+  confirm: confirmSchema.describe(
+    "Must be true. Clearing a clip removes its loaded media (source, name, thumbnail) — the slot becomes empty. Pass true only when the user has explicitly asked to remove a clip from a slot."
+  ),
 } as const;
 
 export const clearClipTool: ToolDefinition<typeof clearSchema> = {
@@ -30,11 +32,9 @@ export const clearClipTool: ToolDefinition<typeof clearSchema> = {
 };
 
 const wipeSchema = {
-  confirm: z
-    .boolean()
-    .describe(
-      'Must be true. This empties EVERY clip slot on EVERY layer — irreversible. Pass true only after the user has explicitly asked to "wipe", "clear all clips", or equivalent. Always confirm with the user first.'
-    ),
+  confirm: confirmSchema.describe(
+    'Must be true. This empties EVERY clip slot on EVERY layer — irreversible. Pass true only after the user has explicitly asked to "wipe", "clear all clips", or equivalent. Always confirm with the user first.'
+  ),
 } as const;
 
 export const wipeCompositionTool: ToolDefinition<typeof wipeSchema> = {

@@ -96,6 +96,7 @@ async function findToolSourceFiles() {
     if (name === "types.ts") return false;
     if (name === "registry.ts") return false;
     if (name === "test-helpers.ts") return false;
+    if (name === "schema-helpers.ts") return false;
     if (name.endsWith(".test.ts")) return false;
     if (name.startsWith("index")) return false;
     if (name.startsWith("_")) return false;

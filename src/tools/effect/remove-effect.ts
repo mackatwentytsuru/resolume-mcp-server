@@ -1,26 +1,18 @@
-import { z } from "zod";
 import { errorResult, textResult, type ToolDefinition } from "../types.js";
+import {
+  confirmSchema,
+  effectIndexSchema,
+  layerIndexSchema,
+} from "../schema-helpers.js";
 
 const inputSchema = {
-  layer: z
-    .number()
-    .int()
-    .min(1)
-    .max(9999)
-    .describe("1-based layer index."),
-  effectIndex: z
-    .number()
-    .int()
-    .min(1)
-    .max(99)
-    .describe(
-      "1-based effect position on the layer. Call resolume_list_layer_effects to enumerate. Index 1 is typically the built-in Transform effect — do not remove it unless the user explicitly asked."
-    ),
-  confirm: z
-    .boolean()
-    .describe(
-      "Must be true to confirm. Removing an effect is destructive and cannot be undone via the API. Pass true only when the user explicitly asked to remove an effect."
-    ),
+  layer: layerIndexSchema,
+  effectIndex: effectIndexSchema.describe(
+    "1-based effect position on the layer. Call resolume_list_layer_effects to enumerate. Index 1 is typically the built-in Transform effect — do not remove it unless the user explicitly asked."
+  ),
+  confirm: confirmSchema.describe(
+    "Must be true to confirm. Removing an effect is destructive and cannot be undone via the API. Pass true only when the user explicitly asked to remove an effect."
+  ),
 } as const;
 
 export const removeEffectFromLayerTool: ToolDefinition<typeof inputSchema> = {

@@ -2,6 +2,34 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.5.3] - 2026-04-28
+
+Wire-protocol coercion fix discovered during v0.5.2 live testing.
+
+### Fixed — destructive tools rejected valid input when MCP transport stringified primitives
+
+- **The bug**: `resolume_remove_effect_from_layer`, `resolume_clear_clip`, `resolume_clear_layer`, and `resolume_wipe_composition` all rejected calls where the MCP transport delivered numeric and boolean args as JSON strings. Live-reproduced against Resolume Arena 7.23.2 with the v0.5.2 MCP server (no wire-format change in the v0.5.2 build itself — the regression appears to be on the Claude Desktop / `@modelcontextprotocol/sdk` side, but our schemas were strict enough to surface it):
+  ```
+  resolume_remove_effect_from_layer({ layer: 1, effectIndex: 2, confirm: true })
+  → MCP error -32602: Input validation error:
+      layer:        Expected number,  received string
+      effectIndex:  Expected number,  received string
+      confirm:      Expected boolean, received string
+  ```
+  Same session: `resolume_set_layer_opacity({ layer: 1, opacity: 1 })` worked. The pattern: when an arg object includes a `boolean` field, the transport stringified ALL fields of the object.
+
+- **Root cause**: Strict `z.number()` and `z.boolean()` Zod validators in `inputSchema` rejected the wire-stringified payload. Other tools without booleans were never tested against this transport behavior.
+
+- **The fix**: introduced `src/tools/schema-helpers.ts` with `layerIndexSchema`, `clipIndexSchema`, `effectIndexSchema` (using `z.coerce.number().int().min(1).max(N)` to accept numeric strings) and `confirmSchema` (using `z.union([z.boolean(), z.literal("true"), z.literal("false")]).transform(...)` to accept stringified booleans while preserving the safety guard — `Boolean("false") === true` in JavaScript is the reason we deliberately do NOT use `z.coerce.boolean()`). All four destructive tools now use these helpers; future tools should too.
+
+- **Files touched**: `src/tools/schema-helpers.ts` (new), `src/tools/effect/remove-effect.ts`, `src/tools/clip/clear-clip.ts`, `src/tools/layer/clear-layer.ts`, `scripts/gen-tool-index.mjs` (exclude `schema-helpers.ts` from the registry walk).
+
+- **Regression tests added** (24 new, total 450 → 474):
+  - `schema-helpers.test.ts`: 24 cases across `layerIndexSchema`, `clipIndexSchema`, `effectIndexSchema`, `confirmSchema`, plus an end-to-end composed schema that takes the v0.5.3 live-repro payload `{ layer: "1", effectIndex: "2", confirm: "true" }` and asserts it parses to the canonical `{ layer: 1, effectIndex: 2, confirm: true }`.
+  - Critical safety property explicitly tested: `confirm: "0"`, `confirm: "1"`, `confirm: "yes"`, `confirm: "FALSE"`, `confirm: 0`, `confirm: 1`, `confirm: null`, `confirm: undefined` ALL reject — only the literal strings `"true"` / `"false"` and the literal booleans `true` / `false` pass through.
+
+- **No breaking change** — handlers see exactly the same `(layer: number, effectIndex: number, confirm: boolean)` types they always did. The only change is what the schemas accept on the way in.
+
 ## [0.5.2] - 2026-04-28
 
 ### Fixed — silent no-op on `setEffectParameter` cache-hit writes (broader than the original v0.5.2 hypothesis)
