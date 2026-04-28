@@ -419,6 +419,7 @@ export class CompositionStore {
     const base = this.options.reconnectIntervalMs ?? DEFAULT_RECONNECT_INTERVAL_MS;
     // Jitter ±20% so multiple instances don't synchronize their retries.
     const jitter = base * 0.2;
+    // non-cryptographic — jitter only
     const delay = Math.max(100, Math.floor(base + (Math.random() * 2 - 1) * jitter));
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
