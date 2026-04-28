@@ -55,6 +55,13 @@ export function buildCtx(overrides: Partial<ResolumeClient> = {}) {
     addEffectToLayer: vi.fn(async () => undefined),
     removeEffectFromLayer: vi.fn(async () => undefined),
     getClipThumbnail: vi.fn(async () => ({ base64: "AAAA", mediaType: "image/png" })),
+    // v0.5.1 cache-fast reads — defaults are REST-source so tests not
+    // exercising the cache path get a deterministic shape.
+    getTempoFast: vi.fn(async () => ({ bpm: 128, min: 20, max: 500 })),
+    getClipPositionFast: vi.fn(async () => 0.5),
+    getClipPositionFastTagged: vi.fn(async () => ({ value: 0.5, source: "rest" as const })),
+    getCrossfaderFast: vi.fn(async () => 0),
+    getLayerOpacityFast: vi.fn(async () => 1),
     ...overrides,
   } as unknown as ResolumeClient;
   return { client, ctx: { client } };
