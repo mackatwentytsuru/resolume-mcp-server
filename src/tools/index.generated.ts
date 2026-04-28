@@ -48,6 +48,7 @@ import { oscQueryTool } from "./osc/query.js";
 import { oscSendTool } from "./osc/send.js";
 import { oscStatusTool } from "./osc/status.js";
 import { oscSubscribeTool } from "./osc/subscribe.js";
+import { cacheRefreshTool } from "./store/cache-refresh.js";
 import { cacheStatusTool } from "./store/cache-status.js";
 import { getTempoTool } from "./tempo/get-tempo.js";
 import { resyncTempoTool } from "./tempo/resync-tempo.js";
@@ -87,6 +88,7 @@ export const allTools: ReadonlyArray<AnyTool> = [
   eraseTool(oscSendTool),
   eraseTool(oscStatusTool),
   eraseTool(oscSubscribeTool),
+  eraseTool(cacheRefreshTool),
   eraseTool(cacheStatusTool),
   eraseTool(getTempoTool),
   eraseTool(resyncTempoTool),

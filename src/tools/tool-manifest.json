@@ -1,5 +1,5 @@
 {
-  "count": 37,
+  "count": 38,
   "tools": [
     {
       "destructive": false,
@@ -7,6 +7,13 @@
       "name": "resolume_add_effect_to_layer",
       "stability": "stable",
       "symbol": "addEffectToLayerTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/store/cache-refresh.ts",
+      "name": "resolume_cache_refresh",
+      "stability": "stable",
+      "symbol": "cacheRefreshTool"
     },
     {
       "destructive": false,

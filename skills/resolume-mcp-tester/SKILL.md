@@ -27,7 +27,7 @@ The MCP server has 3 communication channels with Resolume:
 | **OSC IN** `udp://127.0.0.1:7000` | Trigger/parameter writes | 7000 | `resolume_osc_send` |
 | **OSC OUT** `udp://127.0.0.1:7001` | Real-time push from Resolume | 7001 | `resolume_osc_query`, `resolume_osc_subscribe` |
 
-**Tool catalog (v0.5.1 — 37 tools)** — see project `README.md` for the canonical list. Categories:
+**Tool catalog (v0.5.1 — 38 tools)** — see project `README.md` for the canonical list. Categories:
 
 - **Composition**: `get_composition`, `get_beat_snap`, `set_beat_snap`, `get_crossfader`, `set_crossfader`
 - **Clips**: `trigger_clip`, `select_clip`, `get_clip_thumbnail`, `set_clip_play_direction`, `set_clip_play_mode`, `set_clip_position`, `clear_clip`, `wipe_composition`
@@ -36,7 +36,7 @@ The MCP server has 3 communication channels with Resolume:
 - **Tempo**: `get_tempo`, `set_bpm`, `tap_tempo` *(marked `[BETA]` in v0.5.0 — see "Stability tiers" below)*, `resync_tempo`
 - **Effects**: `list_video_effects`, `list_layer_effects`, `set_effect_parameter`, `add_effect_to_layer`, `remove_effect_from_layer`
 - **OSC** (v0.4): `osc_send`, `osc_query`, `osc_subscribe`, `osc_status`
-- **Cache** (v0.5.1, gated on `RESOLUME_CACHE`): `cache_status`
+- **Cache** (v0.5.1, gated on `RESOLUME_CACHE`): `cache_status`, `cache_refresh`
 
 ## v0.5.0 environment flags (NEW)
 
@@ -252,7 +252,7 @@ These have been definitively verified across REST/WS/OSC by 3 separate investiga
 ```
 "Run a comprehensive smoke test of every tool in resolume-mcp-server against the live Resolume at 127.0.0.1:8080.
 
-Use the resolume-mcp-tester skill for safety rules and recipes. For each of the 37 tools:
+Use the resolume-mcp-tester skill for safety rules and recipes. For each of the 38 tools:
 1. Snapshot the parameter/state before mutation
 2. Call the tool with safe values (Recipe B pattern)
 3. Verify with a fresh REST read (NEVER trust just 204)
