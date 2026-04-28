@@ -68,7 +68,7 @@ describe("ResolumeClient.clearClip", () => {
 });
 
 describe("ResolumeClient.wipeComposition", () => {
-  it("clears every clip slot on every layer and reports the count", async () => {
+  it("issues one clearclips POST per non-empty layer and reports the slot count", async () => {
     const { client, rest } = buildClient({
       get: () => ({
         layers: [
@@ -80,9 +80,29 @@ describe("ResolumeClient.wipeComposition", () => {
     });
     const result = await client.wipeComposition();
     expect(result).toEqual({ layers: 3, slotsCleared: 9 });
-    expect(rest.post).toHaveBeenCalledTimes(9);
-    expect(rest.post).toHaveBeenCalledWith("/composition/layers/1/clips/1/clear");
-    expect(rest.post).toHaveBeenCalledWith("/composition/layers/3/clips/4/clear");
+    // Three layers, all non-empty → three clearclips POSTs (was 9 slot POSTs).
+    expect(rest.post).toHaveBeenCalledTimes(3);
+    expect(rest.post).toHaveBeenCalledWith("/composition/layers/1/clearclips");
+    expect(rest.post).toHaveBeenCalledWith("/composition/layers/2/clearclips");
+    expect(rest.post).toHaveBeenCalledWith("/composition/layers/3/clearclips");
+  });
+
+  it("skips layers with zero clips (no wasted round-trips)", async () => {
+    const { client, rest } = buildClient({
+      get: () => ({
+        layers: [
+          { clips: [{}, {}] },
+          { clips: [] },
+          { clips: [{}] },
+          { /* no clips key */ },
+        ],
+      }),
+    });
+    const result = await client.wipeComposition();
+    expect(result).toEqual({ layers: 4, slotsCleared: 3 });
+    expect(rest.post).toHaveBeenCalledTimes(2);
+    expect(rest.post).toHaveBeenCalledWith("/composition/layers/1/clearclips");
+    expect(rest.post).toHaveBeenCalledWith("/composition/layers/3/clearclips");
   });
 
   it("handles a composition with no layers", async () => {
@@ -90,6 +110,21 @@ describe("ResolumeClient.wipeComposition", () => {
     const result = await client.wipeComposition();
     expect(result).toEqual({ layers: 0, slotsCleared: 0 });
     expect(rest.post).not.toHaveBeenCalled();
+  });
+
+  it("dispatches more layers than the concurrency cap without dropping any", async () => {
+    // 6 layers > WIPE_LAYER_CONCURRENCY (4); ensure all six get cleared.
+    const { client, rest } = buildClient({
+      get: () => ({
+        layers: Array.from({ length: 6 }, () => ({ clips: [{}] })),
+      }),
+    });
+    const result = await client.wipeComposition();
+    expect(result).toEqual({ layers: 6, slotsCleared: 6 });
+    expect(rest.post).toHaveBeenCalledTimes(6);
+    for (let i = 1; i <= 6; i += 1) {
+      expect(rest.post).toHaveBeenCalledWith(`/composition/layers/${i}/clearclips`);
+    }
   });
 });
 

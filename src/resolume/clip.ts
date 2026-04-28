@@ -76,30 +76,67 @@ export async function clearClip(
  * Reads the composition shape from composition.getComposition; the one-way
  * dependency on composition.ts is what forces clip.ts to be the last module
  * extracted in the per-domain split.
+ *
+ * Implementation note (v0.5 Sprint C / Component 4 Phase 2): instead of
+ * issuing one POST per clip slot (O(layers × clips) requests), we issue one
+ * `POST /composition/layers/{n}/clearclips` per layer (O(layers) requests).
+ * `clearclips` is documented in Resolume's official OpenAPI spec
+ * (`/composition/layers/{layer-index}/clearclips`, returns 204) and clears
+ * every clip on that layer in one shot. We then run those per-layer POSTs
+ * in parallel with a small concurrency cap so we don't flood Resolume's
+ * single-threaded HTTP server.
+ *
+ * `slotsCleared` is computed from the composition snapshot (sum of
+ * `layer.clips.length`) — the per-layer endpoint doesn't return a count,
+ * so we report what we expect to be cleared. This matches the contract of
+ * the previous implementation, which also computed the count from the same
+ * snapshot.
  */
+const WIPE_LAYER_CONCURRENCY = 4;
+
 export async function wipeComposition(
   rest: ResolumeRestClient,
   cache?: EffectIdCache
 ): Promise<{ layers: number; slotsCleared: number }> {
   const composition = await getComposition(rest);
   const layers = composition.layers ?? [];
-  let cleared = 0;
-  // Sequential by design — Resolume drops parallel POST bursts.
-  for (let li = 0; li < layers.length; li += 1) {
-    const clips = layers[li].clips ?? [];
-    for (let ci = 0; ci < clips.length; ci += 1) {
-      await rest.post(
-        `/composition/layers/${li + 1}/clips/${ci + 1}/clear`
-      );
-      cleared += 1;
+  // Pre-compute the expected slot count and per-layer indices.
+  const targets = layers.map((layer, idx) => ({
+    layerIndex: idx + 1,
+    clipCount: (layer.clips ?? []).length,
+  }));
+  const expectedCleared = targets.reduce((sum, t) => sum + t.clipCount, 0);
+  // Dispatch with a fixed-size concurrency window. Workers pull from a shared
+  // index counter so a slow layer (large clip set) doesn't stall the others.
+  // The 4-way cap prevents flooding Resolume's single-threaded HTTP server
+  // (the previous v0.5.0 implementation was sequential for that reason; the
+  // /clearclips endpoint absorbs all clips on a layer in one POST so we now
+  // need O(layers) requests instead of O(layers × clips), and a small
+  // concurrency window is safe).
+  let cursor = 0;
+  async function worker(): Promise<void> {
+    while (true) {
+      const i = cursor;
+      cursor += 1;
+      if (i >= targets.length) return;
+      const t = targets[i];
+      // Skip layers with zero clips — `clearclips` is harmless on an empty
+      // layer (returns 204) but the no-op round-trip is wasteful.
+      if (t.clipCount === 0) continue;
+      await rest.post(`/composition/layers/${t.layerIndex}/clearclips`);
     }
   }
+  const workers = Array.from(
+    { length: Math.min(WIPE_LAYER_CONCURRENCY, targets.length) },
+    () => worker()
+  );
+  await Promise.all(workers);
   // Conservative wipe — composition shape may be different after; drop
   // the entire effect-id cache. (clearClip is clip-only and would not
   // invalidate effect ids on its own; we treat the bulk wipe as a hard
   // reset signal regardless.)
   cache?.clearAll();
-  return { layers: layers.length, slotsCleared: cleared };
+  return { layers: layers.length, slotsCleared: expectedCleared };
 }
 
 // ---- Transport (direction / play mode / position) ----

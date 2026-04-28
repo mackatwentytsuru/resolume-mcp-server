@@ -1,6 +1,7 @@
 node_modules/
 build/
 coverage/
+.claude/
 *.log
 .DS_Store
 .env
