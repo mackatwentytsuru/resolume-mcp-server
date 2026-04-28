@@ -233,4 +233,137 @@ export class ResolumeClient {
   async removeEffectFromLayer(l: number, effectIndex: number): Promise<void> {
     return effects.removeEffectFromLayer(this.rest, l, effectIndex, this.effectIdCache);
   }
+
+  // ──────────────────────── v0.5.1 cache-fast reads ────────────────────────
+  //
+  // The `*Fast` methods consult the optional CompositionStore first and fall
+  // back to REST when the cache is absent, stale, or carries a null value.
+  // When `this.store` is null (default — RESOLUME_CACHE unset) every method
+  // here delegates straight to its REST counterpart with zero overhead, so
+  // tools that opt in via `getXxxFast()` are safe to call regardless of the
+  // user's cache configuration.
+  //
+  // Source-tagged variants (e.g. `getClipPositionFastTagged`) report whether
+  // the value came from the cache or REST — useful for tool diagnostics like
+  // `resolume_get_clip_position` that want to expose that to the LLM.
+
+  /**
+   * Cache-first BPM read. When the cache is fresh on the `bpm` field, returns
+   * the cached `TempoState`; otherwise falls through to REST. Falls back to
+   * REST when the cached `bpm` value is null even if the OSC stream is live
+   * (the OSC tempo push is normalized 0..1 and only the REST seed populates
+   * the raw BPM).
+   */
+  async getTempoFast(): Promise<TempoState> {
+    if (this.store) {
+      const t = this.store.readTempo();
+      if (t.bpm.value !== null && this.store.isFresh("bpm")) {
+        return {
+          bpm: t.bpm.value,
+          min: t.min.value,
+          max: t.max.value,
+        };
+      }
+    }
+    return this.getTempo();
+  }
+
+  /**
+   * Cache-first clip transport position read.
+   *
+   * Cache hit when `readClipPosition` returns a non-null value with
+   * `ageMs < 500` (within the transport TTL doubled — Resolume pushes every
+   * ~3 ms while playing). On miss, falls through to a single
+   * `GET /composition/layers/{l}/clips/{c}` and extracts the normalized
+   * position from `transport.position.value`.
+   *
+   * Returns `null` when the clip is unknown or has no transport position.
+   */
+  async getClipPositionFast(layer: number, clip: number): Promise<number | null> {
+    const tagged = await this.getClipPositionFastTagged(layer, clip);
+    return tagged.value;
+  }
+
+  /**
+   * Source-tagged variant of `getClipPositionFast`. Returns the position
+   * along with `source: "cache" | "rest"` so callers can surface provenance
+   * to the LLM.
+   *
+   * Used by `resolume_get_clip_position` (v0.5.1 Phase 5 tool).
+   */
+  async getClipPositionFastTagged(
+    layer: number,
+    clip: number
+  ): Promise<{ value: number | null; source: "cache" | "rest" }> {
+    if (this.store) {
+      const c = this.store.readClipPosition(layer, clip);
+      if (c.value !== null && c.ageMs !== null && c.ageMs < 500) {
+        return { value: c.value, source: "cache" };
+      }
+    }
+    const value = await this.fetchClipPositionViaRest(layer, clip);
+    return { value, source: "rest" };
+  }
+
+  /**
+   * Cache-first crossfader phase read. The cached scalar is `number | null` —
+   * when null, falls back to REST regardless of freshness so callers always
+   * get a usable value when one exists.
+   */
+  async getCrossfaderFast(): Promise<number | null> {
+    if (this.store) {
+      const cf = this.store.readCrossfader();
+      if (cf.value !== null && this.store.isFresh("crossfaderPhase")) {
+        return cf.value;
+      }
+    }
+    const { phase } = await this.getCrossfader();
+    return phase;
+  }
+
+  /**
+   * Cache-first layer opacity read. There is no per-layer opacity REST
+   * endpoint in Resolume's API, so the REST fallback path goes through
+   * `GET /composition/layers/{l}` and extracts `video.opacity.value`.
+   * Returns null when the layer is out of range or has no opacity field.
+   */
+  async getLayerOpacityFast(layer: number): Promise<number | null> {
+    if (this.store) {
+      const l = this.store.readLayer(layer);
+      // Reject when the source is "unknown" — a freshly-constructed snapshot
+      // has opacity=1 with that tag. Either an OSC push or a REST seed
+      // marks it concrete before `isFresh` should approve a cache hit.
+      if (l && l.opacity.source.kind !== "unknown" && this.store.isFresh("opacity")) {
+        return l.opacity.value;
+      }
+    }
+    return this.fetchLayerOpacityViaRest(layer);
+  }
+
+  /**
+   * REST extraction helper for `getClipPositionFast`. Resolume serializes
+   * `transport.position` as a `ParamRange` envelope `{value, min, max}`. We
+   * only surface the normalized `value`; `min`/`max` come from the REST seed
+   * for callers that need to denormalize.
+   */
+  private async fetchClipPositionViaRest(layer: number, clip: number): Promise<number | null> {
+    const raw = (await this.rest.get(`/composition/layers/${layer}/clips/${clip}`)) as {
+      transport?: { position?: { value?: unknown } };
+    };
+    const v = raw?.transport?.position?.value;
+    return typeof v === "number" ? v : null;
+  }
+
+  /**
+   * REST extraction helper for `getLayerOpacityFast`. There is no
+   * `/composition/layers/N/video/opacity` endpoint — opacity is nested
+   * inside the layer document, so we read the whole layer.
+   */
+  private async fetchLayerOpacityViaRest(layer: number): Promise<number | null> {
+    const raw = (await this.rest.get(`/composition/layers/${layer}`)) as {
+      video?: { opacity?: { value?: unknown } };
+    };
+    const v = raw?.video?.opacity?.value;
+    return typeof v === "number" ? v : null;
+  }
 }
