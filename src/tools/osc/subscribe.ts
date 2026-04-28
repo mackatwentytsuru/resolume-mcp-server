@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { jsonResult, errorResult, type ToolDefinition } from "../types.js";
 import { subscribeOsc, type ReceivedOscMessage } from "../../resolume/osc-client.js";
-import type { OscScalar } from "../../resolume/osc-codec.js";
+import {
+  assertSupportedOscPattern,
+  type OscScalar,
+} from "../../resolume/osc-codec.js";
 
 const inputSchema = {
   addressPattern: z
@@ -75,14 +78,38 @@ export const oscSubscribeTool: ToolDefinition<typeof inputSchema> = {
   inputSchema,
   handler: async (args, ctx) => {
     if (!ctx.osc) return errorResult("OSC config missing — server not initialized with OSC support.");
-    const collected = ctx.store
-      ? await ctx.store.collect(args.addressPattern, args.durationMs, args.maxMessages)
-      : await subscribeOsc(
+    try {
+      assertSupportedOscPattern(args.addressPattern);
+    } catch (err) {
+      return errorResult(err instanceof Error ? err.message : String(err));
+    }
+    // Both the cache-mux path (`ctx.store.collect`) and the legacy
+    // direct-bind path (`subscribeOsc`) must surface the same shape: an
+    // empty `messages` array on bind failure, never a rejected promise.
+    // The mux path is already never-reject by construction; we wrap the
+    // bind path so the tool reports a structured zero-message result if
+    // EADDRINUSE (etc.) prevents binding.
+    let collected: Awaited<ReturnType<typeof subscribeOsc>>;
+    let bindError: string | null = null;
+    if (ctx.store) {
+      collected = await ctx.store.collect(
+        args.addressPattern,
+        args.durationMs,
+        args.maxMessages
+      );
+    } else {
+      try {
+        collected = await subscribeOsc(
           ctx.osc.outPort,
           args.addressPattern,
           args.durationMs,
           args.maxMessages
         );
+      } catch (err) {
+        collected = [];
+        bindError = err instanceof Error ? err.message : String(err);
+      }
+    }
     const messages = args.dedupe ? dedupeConsecutive(collected) : collected;
     return jsonResult({
       pattern: args.addressPattern,
@@ -93,6 +120,13 @@ export const oscSubscribeTool: ToolDefinition<typeof inputSchema> = {
         args: m.args,
         timestamp: m.timestamp,
       })),
+      ...(bindError !== null
+        ? {
+            bindError,
+            hint:
+              "OSC OUT port is held by another listener. Set RESOLUME_CACHE=1 to multiplex through the cache, or close the conflicting listener.",
+          }
+        : {}),
     });
   },
 };

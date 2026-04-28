@@ -14,6 +14,7 @@ export type ResolumeError =
   | { kind: "InvalidValue"; field: string; value: unknown; hint: string }
   | { kind: "NotFound"; path: string; hint: string }
   | { kind: "BadRequest"; path: string; message: string; hint: string }
+  | { kind: "Unauthorized"; path: string; status: 401 | 403; hint: string }
   | { kind: "Timeout"; path: string; hint: string }
   | { kind: "Unknown"; message: string; hint: string };
 
@@ -36,6 +37,8 @@ function formatMessage(d: ResolumeError): string {
       return `Not found: ${d.path}. ${d.hint}`;
     case "BadRequest":
       return `Bad request to ${d.path}: ${d.message}. ${d.hint}`;
+    case "Unauthorized":
+      return `Unauthorized (${d.status}) calling ${d.path}. ${d.hint}`;
     case "Timeout":
       return `Timed out calling ${d.path}. ${d.hint}`;
     case "Unknown":
@@ -58,6 +61,17 @@ export function mapHttpError(path: string, status: number, body: string): Resolu
       path,
       message: body,
       hint: "Check parameter ranges. Some values must be 0..1, layer indices are 1-based.",
+    });
+  }
+  if (status === 401 || status === 403) {
+    return new ResolumeApiError({
+      kind: "Unauthorized",
+      path,
+      status,
+      hint:
+        status === 401
+          ? "Authentication required. Resolume's Web Server is normally unauthenticated; if you are reaching it through a reverse proxy, supply credentials there. Verify RESOLUME_HOST points at the Resolume process directly."
+          : "Forbidden. A reverse proxy or firewall is rejecting the request. Verify RESOLUME_HOST and RESOLUME_PORT point at the Resolume process directly without auth gating.",
     });
   }
   return new ResolumeApiError({

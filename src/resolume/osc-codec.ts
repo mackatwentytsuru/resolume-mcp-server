@@ -151,6 +151,33 @@ function decodeMessage(buf: Buffer): OscMessage | null {
   return { address, args };
 }
 
+/**
+ * Characters that OSC 1.0 reserves for pattern matching but that this codec
+ * does NOT support. Listed explicitly so callers (and `assertSupportedOscPattern`)
+ * fail loudly instead of silently treating these as literal characters.
+ *
+ * Supported: `*` (segment-bound, runs of any non-`/` chars).
+ * Unsupported: `?` (single char), `[abc]` / `[!abc]` (char class),
+ * `{a,b}` (alternation), `//` (descendant — never valid).
+ */
+const UNSUPPORTED_OSC_PATTERN_CHARS = ["?", "[", "]", "{", "}"];
+
+/**
+ * Throws when `pattern` contains OSC 1.0 metacharacters this codec doesn't
+ * implement. Callers should run this once at the public boundary so the
+ * matcher's silent literal-treatment of `?`/`[` doesn't create confusing
+ * "why is my pattern not matching" support tickets.
+ */
+export function assertSupportedOscPattern(pattern: string): void {
+  for (const ch of UNSUPPORTED_OSC_PATTERN_CHARS) {
+    if (pattern.includes(ch)) {
+      throw new Error(
+        `OSC pattern contains unsupported character '${ch}'. This codec only supports '*' (segment-bound wildcard). Found in: ${pattern}`
+      );
+    }
+  }
+}
+
 /** Glob-match an OSC address against a pattern with `*` wildcards (no `?`/`[]`). */
 export function matchOscPattern(pattern: string, address: string): boolean {
   if (pattern === address) return true;

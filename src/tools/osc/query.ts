@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { jsonResult, errorResult, type ToolDefinition } from "../types.js";
 import { queryOsc } from "../../resolume/osc-client.js";
+import { assertSupportedOscPattern } from "../../resolume/osc-codec.js";
 
 const inputSchema = {
   address: z
@@ -28,6 +29,11 @@ export const oscQueryTool: ToolDefinition<typeof inputSchema> = {
   inputSchema,
   handler: async (args, ctx) => {
     if (!ctx.osc) return errorResult("OSC config missing — server not initialized with OSC support.");
+    try {
+      assertSupportedOscPattern(args.address);
+    } catch (err) {
+      return errorResult(err instanceof Error ? err.message : String(err));
+    }
     const messages = await queryOsc(
       ctx.osc.host,
       ctx.osc.inPort,

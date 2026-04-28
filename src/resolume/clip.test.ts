@@ -79,7 +79,7 @@ describe("ResolumeClient.wipeComposition", () => {
       }),
     });
     const result = await client.wipeComposition();
-    expect(result).toEqual({ layers: 3, slotsCleared: 9 });
+    expect(result).toEqual({ layers: 3, slotsCleared: 9, failedLayers: [] });
     // Three layers, all non-empty → three clearclips POSTs (was 9 slot POSTs).
     expect(rest.post).toHaveBeenCalledTimes(3);
     expect(rest.post).toHaveBeenCalledWith("/composition/layers/1/clearclips");
@@ -99,7 +99,7 @@ describe("ResolumeClient.wipeComposition", () => {
       }),
     });
     const result = await client.wipeComposition();
-    expect(result).toEqual({ layers: 4, slotsCleared: 3 });
+    expect(result).toEqual({ layers: 4, slotsCleared: 3, failedLayers: [] });
     expect(rest.post).toHaveBeenCalledTimes(2);
     expect(rest.post).toHaveBeenCalledWith("/composition/layers/1/clearclips");
     expect(rest.post).toHaveBeenCalledWith("/composition/layers/3/clearclips");
@@ -108,7 +108,7 @@ describe("ResolumeClient.wipeComposition", () => {
   it("handles a composition with no layers", async () => {
     const { client, rest } = buildClient({ get: () => ({}) });
     const result = await client.wipeComposition();
-    expect(result).toEqual({ layers: 0, slotsCleared: 0 });
+    expect(result).toEqual({ layers: 0, slotsCleared: 0, failedLayers: [] });
     expect(rest.post).not.toHaveBeenCalled();
   });
 
@@ -120,7 +120,7 @@ describe("ResolumeClient.wipeComposition", () => {
       }),
     });
     const result = await client.wipeComposition();
-    expect(result).toEqual({ layers: 6, slotsCleared: 6 });
+    expect(result).toEqual({ layers: 6, slotsCleared: 6, failedLayers: [] });
     expect(rest.post).toHaveBeenCalledTimes(6);
     for (let i = 1; i <= 6; i += 1) {
       expect(rest.post).toHaveBeenCalledWith(`/composition/layers/${i}/clearclips`);

@@ -154,7 +154,7 @@ export class ResolumeClient {
   async clearClip(l: number, c: number): Promise<void> {
     return clip.clearClip(this.rest, l, c);
   }
-  async wipeComposition(): Promise<{ layers: number; slotsCleared: number }> {
+  async wipeComposition(): Promise<clip.WipeCompositionResult> {
     return clip.wipeComposition(this.rest, this.effectIdCache, this.wipeConcurrency);
   }
   async setClipPlayDirection(
@@ -348,11 +348,12 @@ export class ResolumeClient {
   async getLayerOpacityFast(layer: number): Promise<number | null> {
     if (this.store && this.store.isHydrated()) {
       const l = this.store.readLayer(layer);
-      // Belt-and-braces: also reject when the source is "unknown" — a
-      // freshly-constructed snapshot has opacity=1 with that tag. The
-      // `isHydrated()` gate above already prevents this in normal flow,
-      // but the source check protects against a future change to seed
-      // default scalars before a real REST seed runs.
+      // The `source.kind === "unknown"` guard is intentional belts-and-braces:
+      // `isHydrated()` already gates out empty snapshots, but a future change
+      // to `createEmptySnapshot()` (e.g. seeding default scalars before a real
+      // REST seed runs) would leave per-field source as "unknown" while
+      // hydrated flips true. Rejecting unknown sources here keeps the cache
+      // from returning a placeholder. Covered by `client.fast.test.ts`.
       if (l && l.opacity.source.kind !== "unknown" && this.store.isFresh("opacity")) {
         return l.opacity.value;
       }

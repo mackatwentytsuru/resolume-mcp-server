@@ -10,9 +10,17 @@ import { assertIndex } from "./shared.js";
 import type { EffectIdCache } from "./effect-id-cache.js";
 
 // Module-level parameter type Sets (avoid per-call allocation in coerceParamValue).
-export const NUMERIC_TYPES = new Set(["ParamRange", "ParamNumber", "ParamFloat", "ParamInt"]);
-export const BOOLEAN_TYPES = new Set(["ParamBoolean"]);
-export const STRING_TYPES = new Set(["ParamChoice", "ParamString", "ParamText"]);
+// Frozen so a runtime mutation (e.g. accidental `NUMERIC_TYPES.add(...)` from
+// downstream code) cannot widen the coerce contract.
+export const NUMERIC_TYPES: ReadonlySet<string> = Object.freeze(
+  new Set(["ParamRange", "ParamNumber", "ParamFloat", "ParamInt"])
+);
+export const BOOLEAN_TYPES: ReadonlySet<string> = Object.freeze(
+  new Set(["ParamBoolean"])
+);
+export const STRING_TYPES: ReadonlySet<string> = Object.freeze(
+  new Set(["ParamChoice", "ParamString", "ParamText"])
+);
 
 export function coerceParamValue(
   value: number | string | boolean,
@@ -243,26 +251,18 @@ export async function setEffectParameter(
   // validate the param; on hit we skip the GET and best-effort coerce.
   // `valuetype` is captured during the miss path inside the fetcher closure
   // so the post-`lookup` PUT body uses the freshly-validated type.
+  //
+  // On cache hit (where `fetcher` is never invoked), `valuetype` stays
+  // `undefined` — `coerceParamValue` then passes the value through untyped,
+  // which is the documented caveat (param-schema staleness on hits — see
+  // spec).
   let valuetype: string | undefined;
-  let validatedOnMiss = false;
-  const id = await (cache
-    ? cache.lookup(layer, effectIndex, async () => {
-        const info = await fetchEffectInfo(rest, layer, effectIndex, paramName);
-        valuetype = info.valuetype;
-        validatedOnMiss = true;
-        return info.id;
-      })
-    : (async () => {
-        const info = await fetchEffectInfo(rest, layer, effectIndex, paramName);
-        valuetype = info.valuetype;
-        validatedOnMiss = true;
-        return info.id;
-      })());
-
-  // On cache hit, `validatedOnMiss` stayed false: we don't have a fresh
-  // valuetype, so coerceParamValue passes the value through untyped. This
-  // is the documented caveat (param-schema staleness on hits — see spec).
-  void validatedOnMiss;
+  const fetcher = async (): Promise<number> => {
+    const info = await fetchEffectInfo(rest, layer, effectIndex, paramName);
+    valuetype = info.valuetype;
+    return info.id;
+  };
+  const id = await (cache ? cache.lookup(layer, effectIndex, fetcher) : fetcher());
 
   // Resolume silently rejects type-mismatched values (e.g. string "175" for a
   // ParamRange) — the API returns 204 but ignores the change. Coerce based on

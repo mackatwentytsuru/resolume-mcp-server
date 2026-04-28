@@ -13,12 +13,18 @@ export default defineConfig({
         "src/**/*.test.ts",
         "src/resolume/types.ts",
         "src/version.ts",
+        // Test infrastructure / generated registries — no production logic.
+        "src/tools/test-helpers.ts",
+        "src/tools/index.ts",
+        "src/tools/index.generated.ts",
       ],
       thresholds: {
-        branches: 80,
-        functions: 80,
-        lines: 80,
-        statements: 80,
+        // Tightened from the v0.5 80% baseline after the v0.6 review fixes
+        // pushed actual coverage to ~99% on the production surface.
+        branches: 90,
+        functions: 95,
+        lines: 95,
+        statements: 95,
       },
     },
   },

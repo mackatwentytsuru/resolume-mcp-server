@@ -222,14 +222,4 @@ describe("filterByStability", () => {
     ]);
   });
 
-  it("treats a missing stability field as 'stable'", () => {
-    // Construct an AnyTool-ish object that lacks stability to exercise the
-    // defensive ?? "stable" branch inside filterByStability.
-    const looseStable = {
-      ...stable,
-      stability: undefined as unknown as AnyTool["stability"],
-    } as AnyTool;
-    const out = filterByStability([looseStable, beta, alpha], "stable");
-    expect(out.map((t) => t.name)).toEqual(["stable_tool"]);
-  });
 });

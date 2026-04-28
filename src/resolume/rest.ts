@@ -39,12 +39,12 @@ export class ResolumeRestClient {
     return this.request<T>("GET", path);
   }
 
-  async put<T = unknown>(path: string, body: unknown): Promise<T> {
-    return this.request<T>("PUT", path, body);
+  async put(path: string, body: unknown): Promise<void> {
+    await this.request("PUT", path, body);
   }
 
-  async post<T = unknown>(path: string, body?: unknown): Promise<T> {
-    return this.request<T>("POST", path, body);
+  async post(path: string, body?: unknown): Promise<void> {
+    await this.request("POST", path, body);
   }
 
   /**
@@ -53,12 +53,12 @@ export class ResolumeRestClient {
    * string like `effect:///video/Blur` with `Content-Type: text/plain`. JSON
    * encoding of the same string is silently rejected with a 204 no-op.
    */
-  async postText<T = unknown>(path: string, text: string): Promise<T> {
-    return this.request<T>("POST", path, text, { contentType: "text/plain" });
+  async postText(path: string, text: string): Promise<void> {
+    await this.request("POST", path, text, { contentType: "text/plain" });
   }
 
-  async delete<T = unknown>(path: string): Promise<T> {
-    return this.request<T>("DELETE", path);
+  async delete(path: string): Promise<void> {
+    await this.request("DELETE", path);
   }
 
   /** GET a binary resource (e.g. clip thumbnail) and return base64-encoded data. */
@@ -103,12 +103,24 @@ export class ResolumeRestClient {
     return `${this.baseApi}${normalized}`;
   }
 
+  // Two return shapes: GET endpoints expect a JSON body (`T`), while PUT/POST/
+  // DELETE typically return 204/empty and we want callers to see `void`. The
+  // overloads encode that without forcing every caller to `as T` cast at the
+  // call site. Internally `requestImpl` returns `T | undefined`; the overload
+  // selects which the caller sees.
+  private async request<T>(method: "GET", path: string): Promise<T>;
+  private async request(
+    method: "PUT" | "POST" | "DELETE",
+    path: string,
+    body?: unknown,
+    opts?: { contentType?: string }
+  ): Promise<void>;
   private async request<T>(
     method: string,
     path: string,
     body?: unknown,
     opts?: { contentType?: string }
-  ): Promise<T> {
+  ): Promise<T | void> {
     const url = this.url(path);
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), this.config.timeoutMs);
@@ -136,12 +148,12 @@ export class ResolumeRestClient {
         throw mapHttpError(path, res.status, text);
       }
       // Empty 204 / 200 with no body is common for PUT.
-      if (res.status === 204) return undefined as T;
+      if (res.status === 204) return undefined;
       const ct = res.headers.get("content-type") ?? "";
       if (!ct.includes("application/json")) {
         const text = await safeText(res);
         // PUT/POST often return empty bodies. Empty + non-JSON is a normal "ack" — return undefined.
-        if (text.length === 0) return undefined as T;
+        if (text.length === 0) return undefined;
         // Anything else is a protocol violation — Resolume should always return JSON for data endpoints.
         throw new ResolumeApiError({
           kind: "Unknown",
