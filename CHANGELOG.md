@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] — pending v0.5.2 patch
+## [0.5.2] - 2026-04-28
 
 ### Fixed — silent no-op on `setEffectParameter` cache-hit writes (broader than the original v0.5.2 hypothesis)
 
