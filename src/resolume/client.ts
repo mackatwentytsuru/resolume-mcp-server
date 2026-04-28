@@ -255,7 +255,7 @@ export class ResolumeClient {
    * the raw BPM).
    */
   async getTempoFast(): Promise<TempoState> {
-    if (this.store) {
+    if (this.store && this.store.isHydrated()) {
       const t = this.store.readTempo();
       if (t.bpm.value !== null && this.store.isFresh("bpm")) {
         return {
@@ -295,7 +295,7 @@ export class ResolumeClient {
     layer: number,
     clip: number
   ): Promise<{ value: number | null; source: "cache" | "rest" }> {
-    if (this.store) {
+    if (this.store && this.store.isHydrated()) {
       const c = this.store.readClipPosition(layer, clip);
       if (c.value !== null && c.ageMs !== null && c.ageMs < 500) {
         return { value: c.value, source: "cache" };
@@ -311,7 +311,7 @@ export class ResolumeClient {
    * get a usable value when one exists.
    */
   async getCrossfaderFast(): Promise<number | null> {
-    if (this.store) {
+    if (this.store && this.store.isHydrated()) {
       const cf = this.store.readCrossfader();
       if (cf.value !== null && this.store.isFresh("crossfaderPhase")) {
         return cf.value;
@@ -328,11 +328,13 @@ export class ResolumeClient {
    * Returns null when the layer is out of range or has no opacity field.
    */
   async getLayerOpacityFast(layer: number): Promise<number | null> {
-    if (this.store) {
+    if (this.store && this.store.isHydrated()) {
       const l = this.store.readLayer(layer);
-      // Reject when the source is "unknown" — a freshly-constructed snapshot
-      // has opacity=1 with that tag. Either an OSC push or a REST seed
-      // marks it concrete before `isFresh` should approve a cache hit.
+      // Belt-and-braces: also reject when the source is "unknown" — a
+      // freshly-constructed snapshot has opacity=1 with that tag. The
+      // `isHydrated()` gate above already prevents this in normal flow,
+      // but the source check protects against a future change to seed
+      // default scalars before a real REST seed runs.
       if (l && l.opacity.source.kind !== "unknown" && this.store.isFresh("opacity")) {
         return l.opacity.value;
       }

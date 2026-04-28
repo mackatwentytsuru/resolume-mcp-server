@@ -595,9 +595,51 @@ describe("CompositionStore — refresh() and invalidate()", () => {
     expect(seedCalls).toBe(1);
     const r = await store.refresh();
     expect(seedCalls).toBe(2);
+    if (r.throttled) {
+      throw new Error("first refresh should not be throttled");
+    }
     expect(r.revision).toBeGreaterThan(initialRev);
     expect(typeof r.durationMs).toBe("number");
     expect(r.durationMs).toBeGreaterThanOrEqual(0);
+    await store.stop();
+  });
+
+  // Regression for v0.5.1 review HIGH #1 (DoS surface). The explicit
+  // refresh() API used to bypass the passive scheduleRehydrate debounce —
+  // a tight loop on resolume_cache_refresh would hammer Resolume's
+  // single-threaded HTTP server. Subsequent refresh() calls within
+  // 500 ms now return { throttled: true, retryAfterMs }.
+  it("refresh() rate-limits subsequent calls within 500 ms", async () => {
+    let seedCalls = 0;
+    const rest = makeRest(async () => {
+      seedCalls += 1;
+      return SEED_FIXTURE;
+    });
+    const sock = createFakeSocket();
+    const store = new CompositionStore({
+      options: makeOptions(),
+      rest,
+      socketFactory: () => sock,
+      stderr: { write: () => {} },
+    });
+    await store.start();
+    expect(seedCalls).toBe(1); // start() seeded once
+
+    // First explicit refresh — runs.
+    const r1 = await store.refresh();
+    expect(seedCalls).toBe(2);
+    expect(r1.throttled).toBeFalsy();
+
+    // Immediate second refresh — throttled. Resolume is NOT hit again.
+    const r2 = await store.refresh();
+    expect(seedCalls).toBe(2);
+    if (!r2.throttled) {
+      throw new Error("second immediate refresh should be throttled");
+    }
+    expect(r2.retryAfterMs).toBeGreaterThan(0);
+    expect(r2.retryAfterMs).toBeLessThanOrEqual(500);
+    expect(r2.lastDurationMs).toBeGreaterThanOrEqual(0);
+
     await store.stop();
   });
 

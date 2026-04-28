@@ -36,7 +36,7 @@ The MCP server has 3 communication channels with Resolume:
 - **Tempo**: `get_tempo`, `set_bpm`, `tap_tempo` *(marked `[BETA]` in v0.5.0 — see "Stability tiers" below)*, `resync_tempo`
 - **Effects**: `list_video_effects`, `list_layer_effects`, `set_effect_parameter`, `add_effect_to_layer`, `remove_effect_from_layer`
 - **OSC** (v0.4): `osc_send`, `osc_query`, `osc_subscribe`, `osc_status`
-- **Cache** (v0.5.1, gated on `RESOLUME_CACHE`): `cache_status`, `cache_refresh`
+- **Cache** (v0.5.1, gated on `RESOLUME_CACHE`): `cache_status`, `cache_refresh` *(marked `[ALPHA]` in v0.5.1 — operator escape hatch, hidden by default; set `RESOLUME_TOOLS_STABILITY=alpha` to expose)*
 
 ## v0.5.0 environment flags (NEW)
 

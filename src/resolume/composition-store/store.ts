@@ -42,6 +42,13 @@ const defaultFactory: SocketFactory = () => dgram.createSocket("udp4");
 const DEFAULT_HYDRATION_TIMEOUT_MS = 5_000;
 const DEFAULT_REHYDRATE_THROTTLE_MS = 500;
 const DEFAULT_RECONNECT_INTERVAL_MS = 5_000;
+/**
+ * Minimum interval between two successful `refresh()` calls. Mirrors the
+ * passive `scheduleRehydrate` debounce — without this the explicit
+ * `refresh()` API would let `resolume_cache_refresh` (or any direct caller)
+ * hammer Resolume's single-threaded HTTP server.
+ */
+const REFRESH_MIN_INTERVAL_MS = 500;
 
 /**
  * Internal counters surfaced by `stats()` for debugging and the upcoming
@@ -86,6 +93,10 @@ export class CompositionStore {
   private effectiveMode: CompositionStoreMode;
   private stats_: StoreStats = { msgsReceived: 0, rehydrationsTriggered: 0 };
   private stopped = false;
+  /** Timestamp (ms epoch) of the most recent successful `refresh()` call. */
+  private lastRefreshAt: number | null = null;
+  /** Wall-clock duration of the most recent successful `refresh()` call. */
+  private lastRefreshDurationMs = 0;
 
   constructor(args: StoreConstructorArgs) {
     this.options = args.options;
@@ -242,22 +253,46 @@ export class CompositionStore {
    *
    * Bumps revision via `applyFullSeed` regardless of whether anything
    * actually changed.
+   *
+   * Rate-limited: rejects (without seeding) if called within
+   * `REFRESH_MIN_INTERVAL_MS` (500 ms) of the previous successful refresh.
+   * The throttled return shape includes `throttled: true` and the timing of
+   * the last completed refresh so callers can decide whether to retry.
+   * Mirrors the same coalescing the passive `scheduleRehydrate` path uses
+   * — the explicit `refresh()` API used to bypass it, which made
+   * `resolume_cache_refresh` a DoS surface against Resolume's
+   * single-threaded HTTP server (review v0.5.1 HIGH #1).
    */
-  async refresh(): Promise<{ durationMs: number; revision: number }> {
+  async refresh(): Promise<
+    | { durationMs: number; revision: number; throttled?: false }
+    | { throttled: true; lastDurationMs: number; revision: number; retryAfterMs: number }
+  > {
+    const now = Date.now();
+    const sinceLast = this.lastRefreshAt === null ? Infinity : now - this.lastRefreshAt;
+    if (sinceLast < REFRESH_MIN_INTERVAL_MS) {
+      return {
+        throttled: true,
+        lastDurationMs: this.lastRefreshDurationMs,
+        revision: this.snapshot.revision,
+        retryAfterMs: REFRESH_MIN_INTERVAL_MS - sinceLast,
+      };
+    }
     const t0 = Date.now();
     await this.runSeed();
-    return { durationMs: Date.now() - t0, revision: this.snapshot.revision };
+    const durationMs = Date.now() - t0;
+    this.lastRefreshAt = Date.now();
+    this.lastRefreshDurationMs = durationMs;
+    return { durationMs, revision: this.snapshot.revision };
   }
 
   /**
    * Schedule a full REST re-seed. Coalesces with any pending
    * `scheduleRehydrate` call within the debounce window.
    *
-   * The signature is intentionally no-arg today: a scoped invalidation
-   * (per-layer / per-clip) is on the Phase 5+ roadmap, but until the
-   * targeted refetch path exists the public API would only mislead callers
-   * about what scope actually gets refreshed. When scope-aware refetches
-   * land, this method will gain a typed argument again.
+   * Future scoped invalidation will land as separate methods
+   * (`invalidateLayer`, `invalidateClip`) following the `EffectIdCache`
+   * precedent — re-broadening this method's signature is a breaking change
+   * for existing call sites that use the no-arg form.
    */
   invalidate(): void {
     this.scheduleRehydrate("invalidate-call");

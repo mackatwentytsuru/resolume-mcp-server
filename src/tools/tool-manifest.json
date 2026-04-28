@@ -12,7 +12,7 @@
       "destructive": false,
       "file": "src/tools/store/cache-refresh.ts",
       "name": "resolume_cache_refresh",
-      "stability": "stable",
+      "stability": "alpha",
       "symbol": "cacheRefreshTool"
     },
     {

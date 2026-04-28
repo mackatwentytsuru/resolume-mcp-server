@@ -6,13 +6,11 @@ const inputSchema = {
     .number()
     .int()
     .min(1)
-    .max(9999)
     .describe("1-based layer index. Use resolume_get_composition to list valid indices."),
   clip: z
     .number()
     .int()
     .min(1)
-    .max(9999)
     .describe("1-based clip (column) index within the layer."),
 } as const;
 

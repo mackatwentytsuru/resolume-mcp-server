@@ -9,8 +9,10 @@ function fakeStore(refresh: () => Promise<{ durationMs: number; revision: number
 }
 
 describe("resolume_cache_refresh", () => {
-  it("declares stable stability and an empty input schema", () => {
-    expect(cacheRefreshTool.stability).toBe("stable");
+  it("declares alpha stability and an empty input schema", () => {
+    // alpha: hidden by default (RESOLUME_TOOLS_STABILITY=beta excludes alpha)
+    // — the tool is an operator escape hatch, not for routine LLM use.
+    expect(cacheRefreshTool.stability).toBe("alpha");
     expect(Object.keys(cacheRefreshTool.inputSchema)).toHaveLength(0);
     expect(cacheRefreshTool.name).toBe("resolume_cache_refresh");
   });
