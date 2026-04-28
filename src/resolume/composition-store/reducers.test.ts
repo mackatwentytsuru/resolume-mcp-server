@@ -282,11 +282,51 @@ describe("applyOscMessage routing", () => {
       osc("/composition/something/unmapped", [1], NOW),
       { onUnknownAddress: unknown }
     );
-    // Snapshot still bumps oscLive (anything Resolume emits is a sign of life).
+    // First unknown packet bumps oscLive (anything Resolume emits is a sign of life).
     expect(next.oscLive).toBe(true);
     expect(next.lastOscAt).toBe(NOW);
     expect(unknown).toHaveBeenCalledOnce();
     expect(unknown).toHaveBeenCalledWith("/composition/something/unmapped");
+  });
+
+  it("debounces lastOscAt updates on unknown-address storm (~50 ms window)", () => {
+    const seed = seedFixture(1, 1);
+    const unknown = vi.fn();
+    // First packet promotes oscLive and stamps lastOscAt.
+    const s1 = applyOscMessage(
+      seed,
+      osc("/composition/something/unmapped", [1], NOW),
+      { onUnknownAddress: unknown }
+    );
+    expect(s1.oscLive).toBe(true);
+    expect(s1.lastOscAt).toBe(NOW);
+
+    // Subsequent unknown packets within 50 ms return the previous snapshot
+    // unchanged — same identity, no fresh allocation. Callback still fires.
+    const s2 = applyOscMessage(
+      s1,
+      osc("/composition/something/else", [2], NOW + 10),
+      { onUnknownAddress: unknown }
+    );
+    expect(s2).toBe(s1);
+    const s3 = applyOscMessage(
+      s2,
+      osc("/composition/yet/another", [3], NOW + 49),
+      { onUnknownAddress: unknown }
+    );
+    expect(s3).toBe(s1);
+
+    // After the debounce window elapses, lastOscAt updates again.
+    const s4 = applyOscMessage(
+      s3,
+      osc("/composition/and/another", [4], NOW + 50),
+      { onUnknownAddress: unknown }
+    );
+    expect(s4).not.toBe(s1);
+    expect(s4.lastOscAt).toBe(NOW + 50);
+
+    // Callback fires every time, regardless of debounce.
+    expect(unknown).toHaveBeenCalledTimes(4);
   });
 
   it("clipbeatsnap with non-string arg is ignored but oscLive still updates", () => {

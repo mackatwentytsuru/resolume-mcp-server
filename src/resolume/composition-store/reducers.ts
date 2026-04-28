@@ -305,6 +305,15 @@ const RE_CROSSFADER = /^\/composition\/crossfader\/phase$/;
 const RE_BEATSNAP = /^\/composition\/clipbeatsnap$/;
 const RE_DECK_SELECT = /^\/composition\/decks\/(\d+)\/select$/;
 
+/**
+ * Debounce window for `lastOscAt` updates on unknown addresses. At ~325 msg/s
+ * an unknown-address storm would otherwise allocate a fresh snapshot per
+ * packet to bump bookkeeping fields. 50 ms is small enough that freshness
+ * gates still see lastOscAt near-realtime, large enough to coalesce ~16 bursts
+ * into one allocation.
+ */
+const UNKNOWN_ADDRESS_DEBOUNCE_MS = 50;
+
 export interface OscRouteOptions {
   /** Invoked with the raw address whenever it does not match any known reducer. */
   readonly onUnknownAddress?: (address: string) => void;
@@ -426,8 +435,18 @@ export function applyOscMessage(
     return applySelectedDeck(baseline, deck, value, source);
   }
 
-  // No match — bookkeeping only.
+  // No match — bookkeeping only. Debounce timestamp-only updates so an
+  // unknown-address storm doesn't allocate a fresh snapshot per packet.
+  // The first packet always promotes oscLive=true; subsequent packets
+  // within the debounce window return the previous snapshot unchanged.
   options.onUnknownAddress?.(msg.address);
+  if (
+    prev.oscLive &&
+    prev.lastOscAt !== null &&
+    msg.timestamp - prev.lastOscAt < UNKNOWN_ADDRESS_DEBOUNCE_MS
+  ) {
+    return prev;
+  }
   return baseline;
 }
 
