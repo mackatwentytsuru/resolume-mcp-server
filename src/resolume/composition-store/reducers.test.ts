@@ -404,6 +404,15 @@ describe("simple sub-reducer ergonomics", () => {
     expect(applyTempo(prev, null, OSC_SRC)).toBe(prev);
   });
 
+  it("applyTempo same value returns prev unchanged (structural share)", () => {
+    let s = seedFixture(1, 1);
+    s = applyTempo(s, 0.5, OSC_SRC);
+    const after = applyTempo(s, 0.5, OSC_SRC);
+    // Identity-equal — no allocation when value matches the previous observation.
+    expect(after).toBe(s);
+    expect(after.tempo.bpmNormalized.value).toBe(0.5);
+  });
+
   it("applyCrossfader same value refreshes source without revision bump", () => {
     let s = seedFixture(1, 1);
     s = applyCrossfader(s, 0.3, OSC_SRC);

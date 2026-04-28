@@ -654,10 +654,11 @@ export function applyTempo(
 ): CachedComposition {
   if (value === null) return prev;
   if (prev.tempo.bpmNormalized.value === value) {
-    return {
-      ...prev,
-      tempo: { ...prev.tempo, bpmNormalized: { value, source } },
-    };
+    // No-op: same value as last observation. Return prev unchanged so we
+    // avoid allocating three objects per packet on the ~325 Hz tempo stream.
+    // Source freshness is sacrificed but isFresh() falls back to lastOscAt
+    // (already updated in the baseline) for coarse tempo freshness checks.
+    return prev;
   }
   return bumpRevision({
     ...prev,
