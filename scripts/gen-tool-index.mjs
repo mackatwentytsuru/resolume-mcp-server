@@ -207,6 +207,18 @@ function parseToolFile(absPath) {
   // We capture the symbol name and then parse the object body that follows
   // it to find the `name:` literal and `destructive:` flag belonging to
   // *this* declaration.
+  //
+  // BRITTLENESS NOTE: This is a pure regex parser, not a real TS AST walk.
+  // It will misparse two things if a future tool author introduces them:
+  //   1. Nested object literals whose closing `};` precedes the outer one
+  //      (the `[\s\S]*?\n\};` non-greedy match terminates too early).
+  //   2. Computed/template-literal property names for `name:`,
+  //      `stability:`, etc. (the inner `extractStringLiteral` helper only
+  //      matches plain `"..."` literals).
+  // Both cases are caught at CI time by `npm run check:tools` which
+  // regenerates and diffs against the committed manifest — drift fails
+  // the build before merge. If you hit either limit, switch this file to
+  // a TS AST parse (e.g. via `typescript`'s compiler API).
   const declRe =
     /export\s+const\s+([a-z][A-Za-z0-9]*Tool)\s*:\s*ToolDefinition\b[^=]*=\s*(\{[\s\S]*?\n\};)/g;
 
