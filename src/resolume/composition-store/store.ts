@@ -452,8 +452,12 @@ export class CompositionStore {
   }
 
   /** Provided for testing — used to verify hydration internals. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  __testInternals(): any {
+  __testInternals(): {
+    hasReconnectTimer: boolean;
+    hasRehydrateTimer: boolean;
+    socketBound: boolean;
+    effectiveMode: CompositionStoreMode;
+  } {
     return {
       hasReconnectTimer: this.reconnectTimer !== null,
       hasRehydrateTimer: this.rehydrateTimer !== null,
