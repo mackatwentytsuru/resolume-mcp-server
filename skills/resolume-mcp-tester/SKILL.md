@@ -57,9 +57,11 @@ Each tool now carries a `stability` marker. `tools/list` decorates descriptions:
 
 Currently only `tap_tempo` is `beta`. Field validation may move it back to `stable` in a future release. If a test op requires `tap_tempo` and it's missing, check `RESOLUME_TOOLS_STABILITY` isn't set to `stable`.
 
-### Cache-coexistence trap (when `RESOLUME_CACHE=1`)
+### Cache + osc_subscribe coexistence (v0.5.1)
 
-When the CompositionStore is in OWNER mode, it exclusively binds the OSC OUT port. The legacy `resolume_osc_subscribe` tool will hit `EADDRINUSE` when called concurrently. v0.5.0 stops here; v0.5.1 will multiplex. **For Recipe E in v0.5.0**: leave `RESOLUME_CACHE` unset. If you need to test cache hydration explicitly, do it in a separate process from `osc_subscribe` calls.
+When the CompositionStore is in OWNER mode it exclusively binds the OSC OUT port. As of v0.5.1, `resolume_osc_subscribe` automatically detects this and **multiplexes through the store via `store.collect()`** — no `EADDRINUSE`, no port contention, and the cache and the subscribe tool can be used concurrently. When `RESOLUME_CACHE` is unset (default) the tool falls back to its legacy bind-the-port behavior, identical to v0.4.x.
+
+For Recipe E (OSC subscribe to playhead): works the same regardless of whether `RESOLUME_CACHE` is enabled. If `cache_status` reports `mode: "owner"` you're getting the multiplexed read; if it reports `mode: "off"` or the tool fails because the store is absent, you're on the legacy bind path.
 
 ## CRITICAL safety rules (lessons from live use)
 
