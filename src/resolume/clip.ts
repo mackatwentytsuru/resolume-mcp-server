@@ -84,6 +84,7 @@ export async function wipeComposition(
   const composition = await getComposition(rest);
   const layers = composition.layers ?? [];
   let cleared = 0;
+  // Sequential by design — Resolume drops parallel POST bursts.
   for (let li = 0; li < layers.length; li += 1) {
     const clips = layers[li].clips ?? [];
     for (let ci = 0; ci < clips.length; ci += 1) {
