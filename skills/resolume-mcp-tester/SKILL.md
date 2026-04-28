@@ -75,6 +75,7 @@ Common silent-rejection cases discovered in production:
 - **Unknown blend mode name** — Resolume accepts the PUT and ignores it (fixed in v0.2.1 with pre-validation)
 - **Cache-buster as path segment instead of query** — `.../thumbnail/12345` returns 404 (fixed in v0.2.1; correct: `.../thumbnail?t=12345`)
 - **Effect-add via JSON instead of `text/plain`** — same body silently ignored unless content-type is `text/plain` and body is `effect:///video/{Name}` (fixed in v0.3.0)
+- **Cached effect id from the GET *immediately* after `addEffectToLayer` is transient** — the first PUT against it lands; subsequent PUTs against the same id silently no-op because Resolume re-keys the new effect to its persistent id within milliseconds (fixed in v0.5.2 — `EffectIdCache.invalidateLayer` now flags the layer for one round of "verify before cache" so the post-add cache hit is forced through a fresh GET against the now-stable id; pre-existing effects unaffected).
 
 ### Rule 2: White-out prevention
 

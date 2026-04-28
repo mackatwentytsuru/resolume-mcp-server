@@ -314,7 +314,17 @@ export async function addEffectToLayer(
   // After add, every (layer, effectIndex) → id mapping on this layer is
   // potentially stale — Resolume can insert at any position. Drop the
   // layer's cache so the next setEffectParameter refetches.
-  cache?.invalidateLayer(layer);
+  //
+  // v0.5.2: also flag the layer as `requireRevalidation`. Live testing
+  // against Arena 7.23.2 showed the GET response immediately after add
+  // exposes a *transient* numeric `id` for the new effect. The first PUT
+  // against that transient id lands; the second silently no-ops because
+  // Resolume has by then re-keyed the effect to its persistent id. With
+  // the revalidation flag, the next MISS-fetch runs the fetcher but does
+  // not cache; the call after that re-fetches the now-stable id and
+  // caches normally. Cost: 1 extra GET per add. Benefit: silent-no-op
+  // class eliminated for cache-hit PUTs against just-added effects.
+  cache?.invalidateLayer(layer, { requireRevalidation: true });
 }
 
 /**

@@ -455,6 +455,140 @@ describe("ResolumeClient.setEffectParameter — effect-id cache", () => {
     ).toBe(3);
   });
 
+  it("post-add stabilization: first MISS after addEffectToLayer is NOT cached, second MISS re-fetches with stable id (v0.5.2 silent-no-op fix)", async () => {
+    // Live-discovered against Arena 7.23.2: the GET response immediately
+    // after `POST /effects/video/add` exposes a transient effect `id`. The
+    // first PUT against that transient id lands; subsequent PUTs against
+    // the same id silently no-op because Resolume has re-keyed the effect
+    // by then. Reproduces the user-visible pattern from v0.5.1 live testing:
+    //
+    //   addEffectToLayer(2, "Hue Rotate")           → cache invalidated
+    //   setEffectParameter(2, 3, "Hue Rotate", 0.3) → MISS → SUCCESS
+    //   setEffectParameter(2, 3, "Hue Rotate", 0.7) → HIT  → SILENT NO-OP
+    //                                                       (value stays 0.3)
+    //
+    // Fix: `addEffectToLayer` now passes `{ requireRevalidation: true }` to
+    // `invalidateLayer`, marking the layer for one round of "verify before
+    // cache". The next MISS fetches but does NOT cache; the call after that
+    // re-fetches against the stable id and caches normally.
+
+    // Simulate Resolume's transient-then-stable id behavior: the first GET
+    // returns id=999 (transient, only valid for one PUT), subsequent GETs
+    // return id=42 (the persistent id Resolume settled on).
+    let getCount = 0;
+    const { client, rest } = buildClient({
+      get: () => {
+        getCount += 1;
+        const id = getCount === 1 ? 999 : 42;
+        return {
+          video: {
+            effects: [
+              { id: 100, params: { Scale: { valuetype: "ParamRange" } } },
+              { id: 200, params: { Scale: { valuetype: "ParamRange" } } },
+              {
+                id,
+                params: { "Hue Rotate": { valuetype: "ParamRange" } },
+              },
+            ],
+          },
+        };
+      },
+    });
+
+    await client.addEffectToLayer(2, "Hue Rotate");
+    // First setEffectParameter after add: MISS, fetches transient id=999,
+    // PUTs with id=999. Cache should NOT store it (stabilizing window).
+    await client.setEffectParameter(2, 3, "Hue Rotate", 0.3);
+    expect(rest.get).toHaveBeenCalledTimes(1);
+    const firstPutBody = (rest.put as { mock: { calls: unknown[][] } }).mock
+      .calls[0][1] as { video: { effects: Array<Record<string, unknown>> } };
+    expect(firstPutBody.video.effects[2]).toMatchObject({
+      id: 999,
+      params: { "Hue Rotate": { value: 0.3 } },
+    });
+
+    // Second setEffectParameter: critical assertion — must re-fetch (MISS
+    // again, NOT a cache hit) so it picks up the now-stable id=42 instead
+    // of the transient id=999 that would silently no-op.
+    await client.setEffectParameter(2, 3, "Hue Rotate", 0.7);
+    expect(rest.get).toHaveBeenCalledTimes(2);
+    const secondPutBody = (rest.put as { mock: { calls: unknown[][] } }).mock
+      .calls[1][1] as { video: { effects: Array<Record<string, unknown>> } };
+    expect(secondPutBody.video.effects[2]).toMatchObject({
+      id: 42,
+      params: { "Hue Rotate": { value: 0.7 } },
+    });
+
+    // Third setEffectParameter: now a cache HIT (the second MISS cached id=42).
+    // Stable id should keep landing.
+    await client.setEffectParameter(2, 3, "Hue Rotate", 0.5);
+    expect(rest.get).toHaveBeenCalledTimes(2);
+    const thirdPutBody = (rest.put as { mock: { calls: unknown[][] } }).mock
+      .calls[2][1] as { video: { effects: Array<Record<string, unknown>> } };
+    expect(thirdPutBody.video.effects[2]).toMatchObject({
+      id: 42,
+      params: { "Hue Rotate": { value: 0.5 } },
+    });
+  });
+
+  it("post-add stabilization does not affect OTHER layers (flag is per-layer)", async () => {
+    // Adding to layer 2 must not force re-fetches on layer 1's cached entries.
+    const { client, rest } = buildClient({
+      get: (path) => {
+        if (path === "/composition/layers/1") {
+          return {
+            video: {
+              effects: [{ id: 11, params: { Scale: { valuetype: "ParamRange" } } }],
+            },
+          };
+        }
+        return {
+          video: {
+            effects: [{ id: 21, params: { Scale: { valuetype: "ParamRange" } } }],
+          },
+        };
+      },
+    });
+    // Populate layer 1 cache.
+    await client.setEffectParameter(1, 1, "Scale", 0.1);
+    expect(rest.get).toHaveBeenCalledTimes(1);
+
+    // Add to layer 2: layer 1's cache should remain untouched.
+    await client.addEffectToLayer(2, "Blur");
+
+    // Layer 1 hit — no extra GET.
+    await client.setEffectParameter(1, 1, "Scale", 0.2);
+    expect(rest.get).toHaveBeenCalledTimes(1);
+  });
+
+  it("removeEffectFromLayer does NOT trigger the post-add stabilization flag", async () => {
+    // Surviving effects keep their ids on remove (only indices shift). No
+    // re-keying means we should resume normal caching immediately after
+    // the next miss, not waste a second GET on a phantom verify.
+    const { client, rest } = buildClient({
+      get: () => ({
+        video: {
+          effects: [
+            { id: 100, params: { Scale: { valuetype: "ParamRange" } } },
+            { id: 200, params: { Scale: { valuetype: "ParamRange" } } },
+          ],
+        },
+      }),
+    });
+    await client.setEffectParameter(1, 1, "Scale", 1); // miss → cache id=100
+    expect(rest.get).toHaveBeenCalledTimes(1);
+    await client.removeEffectFromLayer(1, 2); // 1 GET (validation) + 1 DELETE
+    const getsAfterRemove = (rest.get as { mock: { calls: unknown[][] } }).mock
+      .calls.length;
+    // First MISS post-remove: should cache (no stabilization needed).
+    await client.setEffectParameter(1, 1, "Scale", 2);
+    expect(rest.get).toHaveBeenCalledTimes(getsAfterRemove + 1);
+    // Second call: HIT — no extra GET. (Without the `stabilizing.delete(layer)`
+    // branch in invalidateLayer, this would unnecessarily refetch.)
+    await client.setEffectParameter(1, 1, "Scale", 3);
+    expect(rest.get).toHaveBeenCalledTimes(getsAfterRemove + 1);
+  });
+
   it("ResolumeClient.fromConfig honors effectCacheEnabled: false (env-flag wiring)", async () => {
     // We can't intercept fetch easily here, so we just verify the config
     // path lands on the constructor: a fromConfig'd client with the flag

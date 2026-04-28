@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] — pending v0.5.2 patch
+
+### Fixed — silent no-op on `setEffectParameter` after `addEffectToLayer` (live repro vs Arena 7.23.2)
+
+- **The bug**: a `setEffectParameter` call against a *just-added* effect would land on the first invocation but silently no-op on every subsequent invocation that hit the effect-id cache. The MCP tool reported success, REST returned 204, but Resolume's stored value never changed past the first write. Reproduced consistently against Resolume Arena 7.23.2 with v0.5.1 + `RESOLUME_EFFECT_CACHE` default-on, e.g.:
+  ```
+  addEffectToLayer(2, "Hue Rotate")           → cache invalidated (correct)
+  setEffectParameter(2, 3, "Hue Rotate", 0.3) → MISS → SUCCESS, value=0.3
+  setEffectParameter(2, 3, "Hue Rotate", 0.7) → HIT  → SILENT NO-OP (value stays 0.3)
+  setEffectParameter(2, 3, "Sat. Scale", 0.2) → HIT  → SILENT NO-OP
+  ```
+  Pre-existing effects (Transform, Tile) were unaffected — the bug is specific to the cache hit on a freshly-added effect.
+
+- **Root cause**: in Resolume Arena 7.23.2 the `GET /composition/layers/{n}` response served *immediately* after `POST /composition/layers/{n}/effects/video/add` returns the new effect with a **transient** numeric `id`. The first nested-PUT against that transient id is accepted (Resolume is still resolving the new effect's parameter graph), but a few milliseconds later Resolume re-keys the effect to its persistent id. Subsequent PUTs against the now-stale cached id silently no-op because Resolume can't locate them. The v0.5 design assumed `(layer, effectIndex) → id` is stable as long as the effect array isn't mutated; live behaviour says it's stable *after one settle window*, not before. WebSocket-based clients (Bitfocus Companion) sidestep this because Resolume pushes an `effects_update` message that carries the post-stabilization id; REST-only clients get the transient id from the immediate GET.
+
+- **The fix**: `EffectIdCache.invalidateLayer(layer, { requireRevalidation: true })` now marks the layer as needing one round of "verify before cache". The next MISS-fetch runs the fetcher but does **not** write the result; the call after that re-fetches against the now-stable id and caches normally. `addEffectToLayer` opts into this flag (`removeEffectFromLayer` does not — surviving effects keep their ids). Cost: 1 extra GET per `addEffectToLayer` round-trip cycle. Benefit: the silent-no-op class is eliminated for all cache-hit PUTs against just-added effects.
+
+- **Files touched**: `src/resolume/effect-id-cache.ts` (added `stabilizing: Set<number>`, extended `invalidateLayer` signature, added stabilization-skip branch in `lookup`'s write-back; +clearAll resets the marker), `src/resolume/effects.ts` (`addEffectToLayer` now passes `{ requireRevalidation: true }` to `invalidateLayer`).
+
+- **Regression tests added** (8 new, total 442 → 450):
+  - `effects.test.ts`: `post-add stabilization: first MISS after addEffectToLayer is NOT cached, second MISS re-fetches with stable id (v0.5.2 silent-no-op fix)` — exercises the exact transient-then-stable id pattern with PUT-body assertions on all three calls.
+  - `effects.test.ts`: `post-add stabilization does not affect OTHER layers (flag is per-layer)`.
+  - `effects.test.ts`: `removeEffectFromLayer does NOT trigger the post-add stabilization flag`.
+  - `effect-id-cache.test.ts`: 5 unit tests under `EffectIdCache requireRevalidation flag (v0.5.2 silent-no-op fix)` covering happy path, default behaviour preservation, per-layer scoping, `clearAll` reset, and the override-clears-marker edge case.
+
+- **No breaking change** — `invalidateLayer`'s new options parameter is optional and defaults to the v0.5.1 behaviour. Tools that don't use the cache (`RESOLUME_EFFECT_CACHE=0`) are unaffected.
+
 ## [0.5.1] - 2026-04-28
 
 Sprint C of the v0.5 roadmap — completes the CompositionStore tool surface, multiplexes legacy OSC tooling through the cache, replaces the slow `wipeComposition` with the official `clearclips` sub-endpoint, and clears the v0.5.0 review's MEDIUM/LOW backlog. **Tool count 36 → 39. No breaking changes.** Four orthogonal worktree-isolated implementer agents ran in parallel, each focused on one component.
