@@ -365,7 +365,7 @@ describe("CompositionStore — invalidate after stop is a no-op", () => {
     });
     await store.start();
     await store.stop();
-    store.invalidate("all");
+    store.invalidate();
     expect(store.__testInternals().hasRehydrateTimer).toBe(false);
   });
 });
@@ -618,11 +618,11 @@ describe("CompositionStore — refresh() and invalidate()", () => {
       });
       await store.start();
       expect(seedCalls).toBe(1);
-      store.invalidate("all");
+      store.invalidate();
       expect(store.stats().rehydrationsTriggered).toBe(1);
       // Coalesces additional invalidate calls within debounce window.
-      store.invalidate({ layer: 1 });
-      store.invalidate({ layer: 1, clip: 1 });
+      store.invalidate();
+      store.invalidate();
       expect(store.stats().rehydrationsTriggered).toBe(1);
       await vi.advanceTimersByTimeAsync(50);
       expect(seedCalls).toBe(2);

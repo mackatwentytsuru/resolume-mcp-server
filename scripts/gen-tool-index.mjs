@@ -207,6 +207,18 @@ function parseToolFile(absPath) {
   // We capture the symbol name and then parse the object body that follows
   // it to find the `name:` literal and `destructive:` flag belonging to
   // *this* declaration.
+  //
+  // BRITTLENESS NOTE: This is a pure regex parser, not a real TS AST walk.
+  // It will misparse two things if a future tool author introduces them:
+  //   1. Nested object literals whose closing `};` precedes the outer one
+  //      (the `[\s\S]*?\n\};` non-greedy match terminates too early).
+  //   2. Computed/template-literal property names for `name:`,
+  //      `stability:`, etc. (the inner `extractStringLiteral` helper only
+  //      matches plain `"..."` literals).
+  // Both cases are caught at CI time by `npm run check:tools` which
+  // regenerates and diffs against the committed manifest — drift fails
+  // the build before merge. If you hit either limit, switch this file to
+  // a TS AST parse (e.g. via `typescript`'s compiler API).
   const declRe =
     /export\s+const\s+([a-z][A-Za-z0-9]*Tool)\s*:\s*ToolDefinition\b[^=]*=\s*(\{[\s\S]*?\n\};)/g;
 
@@ -383,6 +395,11 @@ function renderGeneratedTs(grouped, entries) {
  * downstream consumer never has to handle `undefined`. `deprecated` is only
  * emitted when the tool actually carries a deprecation marker.
  *
+ * The `count` field is technically derivable from `tools.length` and is
+ * verified equal in tests — it is kept as a top-level field purely to make
+ * manual inspection of the manifest easier (no need to scroll to the end of
+ * the array). Drop it if/when downstream tooling stabilizes.
+ *
  * @param {ToolEntry[]} entries
  */
 function renderManifestJson(entries) {
@@ -390,6 +407,7 @@ function renderManifestJson(entries) {
     a.name < b.name ? -1 : a.name > b.name ? 1 : 0
   );
   const payload = {
+    // Duplicates `tools.length` for at-a-glance inspection; tests assert equality.
     count: sorted.length,
     tools: sorted.map((e) => {
       /** @type {Record<string, unknown>} */

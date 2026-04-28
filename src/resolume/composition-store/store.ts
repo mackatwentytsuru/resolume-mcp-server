@@ -250,12 +250,16 @@ export class CompositionStore {
   }
 
   /**
-   * Targeted invalidation — currently a thin shim that schedules a full
-   * re-seed. Future work (Phase 5+) may add per-subtree refetches; for now
-   * the simplest correct behavior is to refresh the whole composition.
+   * Schedule a full REST re-seed. Coalesces with any pending
+   * `scheduleRehydrate` call within the debounce window.
+   *
+   * The signature is intentionally no-arg today: a scoped invalidation
+   * (per-layer / per-clip) is on the Phase 5+ roadmap, but until the
+   * targeted refetch path exists the public API would only mislead callers
+   * about what scope actually gets refreshed. When scope-aware refetches
+   * land, this method will gain a typed argument again.
    */
-  invalidate(_scope: "all" | { layer: number } | { layer: number; clip: number }): void {
-    void _scope;
+  invalidate(): void {
     this.scheduleRehydrate("invalidate-call");
   }
 
@@ -419,6 +423,7 @@ export class CompositionStore {
     const base = this.options.reconnectIntervalMs ?? DEFAULT_RECONNECT_INTERVAL_MS;
     // Jitter ±20% so multiple instances don't synchronize their retries.
     const jitter = base * 0.2;
+    // non-cryptographic — jitter only
     const delay = Math.max(100, Math.floor(base + (Math.random() * 2 - 1) * jitter));
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
@@ -452,8 +457,12 @@ export class CompositionStore {
   }
 
   /** Provided for testing — used to verify hydration internals. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  __testInternals(): any {
+  __testInternals(): {
+    hasReconnectTimer: boolean;
+    hasRehydrateTimer: boolean;
+    socketBound: boolean;
+    effectiveMode: CompositionStoreMode;
+  } {
     return {
       hasReconnectTimer: this.reconnectTimer !== null,
       hasRehydrateTimer: this.rehydrateTimer !== null,
