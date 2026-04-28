@@ -30,16 +30,18 @@ export const oscSubscribeTool: ToolDefinition<typeof inputSchema> = {
   name: "resolume_osc_subscribe",
   title: "Subscribe to OSC stream briefly",
   description:
-    "Listens on Resolume's OSC OUT port for the given duration and collects messages whose address matches the glob pattern. Key use: real-time playhead tracking via '/composition/layers/*/clips/*/transport/position' — REST only gives a snapshot, OSC pushes every frame at ~325 msg/s (live verified). NOTE: binds the configured OSC OUT port; will fail with EADDRINUSE if another process is already listening (e.g. a probe script).",
+    "Listens on Resolume's OSC OUT port for the given duration and collects messages whose address matches the glob pattern. Key use: real-time playhead tracking via '/composition/layers/*/clips/*/transport/position' — REST only gives a snapshot, OSC pushes every frame at ~325 msg/s (live verified). When RESOLUME_CACHE is enabled the CompositionStore already owns the OSC OUT socket; this tool then transparently multiplexes through the store via store.collect() — no port contention, no EADDRINUSE, and the cache and this tool can be used concurrently. When the cache is disabled (default) the tool binds the OSC OUT port directly for the duration of the call (legacy behavior); it will then fail with EADDRINUSE if another process is already listening (e.g. a probe script).",
   inputSchema,
   handler: async (args, ctx) => {
     if (!ctx.osc) return errorResult("OSC config missing — server not initialized with OSC support.");
-    const messages = await subscribeOsc(
-      ctx.osc.outPort,
-      args.addressPattern,
-      args.durationMs,
-      args.maxMessages
-    );
+    const messages = ctx.store
+      ? await ctx.store.collect(args.addressPattern, args.durationMs, args.maxMessages)
+      : await subscribeOsc(
+          ctx.osc.outPort,
+          args.addressPattern,
+          args.durationMs,
+          args.maxMessages
+        );
     return jsonResult({
       pattern: args.addressPattern,
       durationMs: args.durationMs,

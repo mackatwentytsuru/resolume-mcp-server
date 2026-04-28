@@ -27,7 +27,7 @@ The MCP server has 3 communication channels with Resolume:
 | **OSC IN** `udp://127.0.0.1:7000` | Trigger/parameter writes | 7000 | `resolume_osc_send` |
 | **OSC OUT** `udp://127.0.0.1:7001` | Real-time push from Resolume | 7001 | `resolume_osc_query`, `resolume_osc_subscribe` |
 
-**Tool catalog (v0.5.0 — 36 tools)** — see project `README.md` for the canonical list. Categories:
+**Tool catalog (v0.5.1 — 38 tools)** — see project `README.md` for the canonical list. Categories:
 
 - **Composition**: `get_composition`, `get_beat_snap`, `set_beat_snap`, `get_crossfader`, `set_crossfader`
 - **Clips**: `trigger_clip`, `select_clip`, `get_clip_thumbnail`, `set_clip_play_direction`, `set_clip_play_mode`, `set_clip_position`, `clear_clip`, `wipe_composition`
@@ -36,6 +36,7 @@ The MCP server has 3 communication channels with Resolume:
 - **Tempo**: `get_tempo`, `set_bpm`, `tap_tempo` *(marked `[BETA]` in v0.5.0 — see "Stability tiers" below)*, `resync_tempo`
 - **Effects**: `list_video_effects`, `list_layer_effects`, `set_effect_parameter`, `add_effect_to_layer`, `remove_effect_from_layer`
 - **OSC** (v0.4): `osc_send`, `osc_query`, `osc_subscribe`, `osc_status`
+- **Cache** (v0.5.1, gated on `RESOLUME_CACHE`): `cache_status`, `cache_refresh`
 
 ## v0.5.0 environment flags (NEW)
 
@@ -56,9 +57,11 @@ Each tool now carries a `stability` marker. `tools/list` decorates descriptions:
 
 Currently only `tap_tempo` is `beta`. Field validation may move it back to `stable` in a future release. If a test op requires `tap_tempo` and it's missing, check `RESOLUME_TOOLS_STABILITY` isn't set to `stable`.
 
-### Cache-coexistence trap (when `RESOLUME_CACHE=1`)
+### Cache + osc_subscribe coexistence (v0.5.1)
 
-When the CompositionStore is in OWNER mode, it exclusively binds the OSC OUT port. The legacy `resolume_osc_subscribe` tool will hit `EADDRINUSE` when called concurrently. v0.5.0 stops here; v0.5.1 will multiplex. **For Recipe E in v0.5.0**: leave `RESOLUME_CACHE` unset. If you need to test cache hydration explicitly, do it in a separate process from `osc_subscribe` calls.
+When the CompositionStore is in OWNER mode it exclusively binds the OSC OUT port. As of v0.5.1, `resolume_osc_subscribe` automatically detects this and **multiplexes through the store via `store.collect()`** — no `EADDRINUSE`, no port contention, and the cache and the subscribe tool can be used concurrently. When `RESOLUME_CACHE` is unset (default) the tool falls back to its legacy bind-the-port behavior, identical to v0.4.x.
+
+For Recipe E (OSC subscribe to playhead): works the same regardless of whether `RESOLUME_CACHE` is enabled. If `cache_status` reports `mode: "owner"` you're getting the multiplexed read; if it reports `mode: "off"` or the tool fails because the store is absent, you're on the legacy bind path.
 
 ## CRITICAL safety rules (lessons from live use)
 
@@ -251,7 +254,7 @@ These have been definitively verified across REST/WS/OSC by 3 separate investiga
 ```
 "Run a comprehensive smoke test of every tool in resolume-mcp-server against the live Resolume at 127.0.0.1:8080.
 
-Use the resolume-mcp-tester skill for safety rules and recipes. For each of the 36 tools:
+Use the resolume-mcp-tester skill for safety rules and recipes. For each of the 38 tools:
 1. Snapshot the parameter/state before mutation
 2. Call the tool with safe values (Recipe B pattern)
 3. Verify with a fresh REST read (NEVER trust just 204)

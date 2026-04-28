@@ -14,8 +14,8 @@ function findTool(name: string) {
 describe("tool registry", () => {
   it("registers all v0.4 tools with unique resolume_-prefixed names", () => {
     const names = allTools.map((t) => t.name);
-    // 36 tools as of v0.4 (added 4 OSC tools).
-    expect(names.length).toBe(36);
+    // 38 tools as of v0.5.1 Sprint C (added cache_status + cache_refresh diagnostics).
+    expect(names.length).toBe(38);
     for (const n of names) {
       expect(n).toMatch(/^resolume_/);
     }
