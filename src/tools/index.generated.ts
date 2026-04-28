@@ -6,6 +6,7 @@ import {
   clearClipTool,
   wipeCompositionTool,
 } from "./clip/clear-clip.js";
+import { getClipPositionTool } from "./clip/get-position.js";
 import { getClipThumbnailTool } from "./clip/get-thumbnail.js";
 import { selectClipTool } from "./clip/select-clip.js";
 import {
@@ -58,6 +59,7 @@ import { tapTempoTool } from "./tempo/tap-tempo.js";
 export const allTools: ReadonlyArray<AnyTool> = [
   eraseTool(clearClipTool),
   eraseTool(wipeCompositionTool),
+  eraseTool(getClipPositionTool),
   eraseTool(getClipThumbnailTool),
   eraseTool(selectClipTool),
   eraseTool(setClipPlayDirectionTool),

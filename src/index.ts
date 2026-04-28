@@ -18,7 +18,6 @@ import { NAME, VERSION } from "./version.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
-  const client = ResolumeClient.fromConfig(config);
 
   // v0.5 CompositionStore — opt-in via RESOLUME_CACHE.
   // Default `mode === "off"` means store is not constructed and behavior is
@@ -45,6 +44,12 @@ async function main(): Promise<void> {
       `[resolume-mcp] CompositionStore enabled in ${config.cache.mode.toUpperCase()} mode (RESOLUME_CACHE).\n`
     );
   }
+
+  // Wire the store into the client *after* it's constructed so cache-fast
+  // read paths (`getTempoFast`, `getClipPositionFast`, etc.) can consult it.
+  // When `store` is undefined the client falls through to REST exactly as
+  // before — public API stays backward-compatible.
+  const client = ResolumeClient.fromConfig(config, store);
 
   const server = new McpServer({
     name: NAME,

@@ -79,6 +79,12 @@ describe("ResolumeClient public-API surface", () => {
     "setEffectParameter",
     "addEffectToLayer",
     "removeEffectFromLayer",
+    // v0.5.1 cache-fast reads
+    "getTempoFast",
+    "getClipPositionFast",
+    "getClipPositionFastTagged",
+    "getCrossfaderFast",
+    "getLayerOpacityFast",
   ];
 
   it("exposes every method tools depend on", () => {

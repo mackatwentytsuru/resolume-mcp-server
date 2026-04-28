@@ -14,8 +14,8 @@ function findTool(name: string) {
 describe("tool registry", () => {
   it("registers all v0.4 tools with unique resolume_-prefixed names", () => {
     const names = allTools.map((t) => t.name);
-    // 38 tools as of v0.5.1 Sprint C (added cache_status + cache_refresh diagnostics).
-    expect(names.length).toBe(38);
+    // 39 tools as of v0.5.1 Sprint C (added cache_status, cache_refresh, get_clip_position).
+    expect(names.length).toBe(39);
     for (const n of names) {
       expect(n).toMatch(/^resolume_/);
     }
@@ -131,6 +131,72 @@ describe("resolume_select_clip", () => {
     const { client, ctx } = buildCtx();
     await findTool("resolume_select_clip").handler({ layer: 2, clip: 5 }, ctx);
     expect(client.selectClip).toHaveBeenCalledWith(2, 5);
+  });
+});
+
+describe("resolume_get_clip_position", () => {
+  it("is registered in allTools", () => {
+    const t = allTools.find((x) => x.name === "resolume_get_clip_position");
+    expect(t).toBeDefined();
+    expect(t?.stability).toBe("stable");
+  });
+
+  it("calls getClipPositionFastTagged with the right args", async () => {
+    const { client, ctx } = buildCtx();
+    await findTool("resolume_get_clip_position").handler({ layer: 3, clip: 7 }, ctx);
+    expect(client.getClipPositionFastTagged).toHaveBeenCalledWith(3, 7);
+  });
+
+  it("returns the cached value with source=cache", async () => {
+    const { ctx } = buildCtx({
+      getClipPositionFastTagged: vi.fn(
+        async () => ({ value: 0.42, source: "cache" as const })
+      ) as unknown as ResolumeClient["getClipPositionFastTagged"],
+    });
+    const result = await findTool("resolume_get_clip_position").handler(
+      { layer: 1, clip: 1 },
+      ctx
+    );
+    expect(result.isError).toBeFalsy();
+    const json = JSON.parse((result.content[0] as { text: string }).text);
+    expect(json).toEqual({ layer: 1, clip: 1, position: 0.42, source: "cache" });
+  });
+
+  it("returns the REST value with source=rest", async () => {
+    const { ctx } = buildCtx({
+      getClipPositionFastTagged: vi.fn(
+        async () => ({ value: 0.91, source: "rest" as const })
+      ) as unknown as ResolumeClient["getClipPositionFastTagged"],
+    });
+    const result = await findTool("resolume_get_clip_position").handler(
+      { layer: 2, clip: 4 },
+      ctx
+    );
+    const json = JSON.parse((result.content[0] as { text: string }).text);
+    expect(json).toEqual({ layer: 2, clip: 4, position: 0.91, source: "rest" });
+  });
+
+  it("returns position=null when neither cache nor REST has a value", async () => {
+    const { ctx } = buildCtx({
+      getClipPositionFastTagged: vi.fn(
+        async () => ({ value: null, source: "rest" as const })
+      ) as unknown as ResolumeClient["getClipPositionFastTagged"],
+    });
+    const result = await findTool("resolume_get_clip_position").handler(
+      { layer: 5, clip: 5 },
+      ctx
+    );
+    const json = JSON.parse((result.content[0] as { text: string }).text);
+    expect(json.position).toBeNull();
+    expect(json.source).toBe("rest");
+  });
+
+  it("rejects non-positive layer/clip indices via schema", () => {
+    const tool = findTool("resolume_get_clip_position");
+    const schema = z.object(tool.inputSchema);
+    expect(schema.safeParse({ layer: 0, clip: 1 }).success).toBe(false);
+    expect(schema.safeParse({ layer: 1, clip: 0 }).success).toBe(false);
+    expect(schema.safeParse({ layer: 1, clip: 1 }).success).toBe(true);
   });
 });
 

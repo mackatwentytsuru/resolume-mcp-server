@@ -1,5 +1,5 @@
 {
-  "count": 38,
+  "count": 39,
   "tools": [
     {
       "destructive": false,
@@ -42,6 +42,13 @@
       "name": "resolume_get_beat_snap",
       "stability": "stable",
       "symbol": "getBeatSnapTool"
+    },
+    {
+      "destructive": false,
+      "file": "src/tools/clip/get-position.ts",
+      "name": "resolume_get_clip_position",
+      "stability": "stable",
+      "symbol": "getClipPositionTool"
     },
     {
       "destructive": false,
